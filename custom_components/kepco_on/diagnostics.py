@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from typing import Any, cast
 
-from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
 
@@ -215,17 +214,6 @@ def _sanitize(value: Any, *, protected_keys: frozenset[str] = frozenset()) -> An
     return str(type(value).__name__)
 
 
-def _json_safe(value: Any) -> Any:
-    """Return a JSON-serializable value without applying privacy key filtering."""
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list | tuple | set | frozenset):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, str | int | float | bool) or value is None:
-        return value
-    return str(type(value).__name__)
-
-
 def _safe_len(value: Any) -> int:
     """Return length for sized values without surfacing their contents."""
     try:
@@ -305,16 +293,6 @@ async def async_get_config_entry_diagnostics(
     entry: Any,
 ) -> dict[str, Any]:
     """Return safe diagnostics for a KEPCO ON config entry."""
-    redacted_source = async_redact_data(
-        {
-            "data": getattr(entry, "data", {}),
-            "options": getattr(entry, "options", {}),
-            "runtime": getattr(entry, "runtime_data", None),
-        },
-        DENY_KEYS,
-    )
-    sanitized_source = _sanitize(redacted_source)
-
     runtime_data = getattr(entry, "runtime_data", None)
     coordinator = getattr(runtime_data, "coordinator", None)
     data = _coordinator_data(runtime_data)
@@ -350,9 +328,7 @@ async def async_get_config_entry_diagnostics(
         "error_categories": _error_categories(getattr(data, "errors_by_customer_key", {})),
     }
     sanitized_summary = _sanitize(summary, protected_keys=SUMMARY_SAFE_KEYS)
-    if not isinstance(sanitized_source, dict) or not isinstance(sanitized_summary, dict):
-        return {}
-    return cast("dict[str, Any]", _json_safe(sanitized_summary))
+    return cast("dict[str, Any]", sanitized_summary)
 
 
 __all__ = ["async_get_config_entry_diagnostics"]

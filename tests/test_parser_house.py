@@ -1,4 +1,4 @@
-"""주택용 직접계약 파서 테스트 — 2026-09-03 실캡처(개인정보 제거) 기반."""
+"""Residential direct-contract parsers with synthetic response fixtures."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from custom_components.kepco_on.models import KepcoCustomer
 from custom_components.kepco_on.parser import (
     parse_customers,
     parse_house_bill,
-    parse_power_planner,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -96,17 +95,6 @@ def test_parse_house_bill_tolerates_bad_period(gigan: object) -> None:
     assert bill.period_end is None
 
 
-def test_parse_power_planner_value_edges() -> None:
-    assert parse_power_planner({"dma_powerPlanner": {"F_AP_QT": 510, "PREDICT_TOT": "null"}}) == (
-        510.0,
-        None,
-    )
-    with pytest.raises(KepcoOnProtocolError):
-        parse_power_planner({"dma_powerPlanner": {"F_AP_QT": True}})
-    with pytest.raises(KepcoOnProtocolError):
-        parse_power_planner({"dma_powerPlanner": {"F_AP_QT": "abc"}})
-
-
 def test_parse_house_bill_latest_and_history() -> None:
     bill = parse_house_bill(_load("house_main_chart.json"))
     assert bill.bill_month == "202608"
@@ -178,13 +166,3 @@ async def test_house_bill_fills_previous_and_last_year_usage_and_emission_sensor
 def test_parse_house_bill_missing_chart_raises() -> None:
     with pytest.raises(KepcoOnProtocolError):
         parse_house_bill({"rsMsg": {}})
-
-
-def test_parse_power_planner() -> None:
-    current, predicted = parse_power_planner(_load("house_power_planner.json"))
-    assert current == pytest.approx(509.783)
-    assert predicted is None
-
-
-def test_parse_power_planner_absent_returns_none() -> None:
-    assert parse_power_planner({"rsMsg": {}}) == (None, None)

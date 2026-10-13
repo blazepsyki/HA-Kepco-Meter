@@ -35,7 +35,3 @@ class KepcoOnRateLimitError(KepcoOnConnectionError):
 
 class KepcoOnProtocolError(KepcoOnError):
     """KEPCO ON returned an unexpected protocol shape."""
-
-
-class KepcoOnPartialUpdateError(KepcoOnError):
-    """One or more selected customers failed while others updated."""

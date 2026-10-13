@@ -15,7 +15,6 @@ from .api import KepcoOnTransport
 from .const import (
     ENDPOINT_LOGIN_INDI,
     ENDPOINT_SESSION_CHECK,
-    ENDPOINT_SSO_CHECK,
     PERSISTED_COOKIE_ALLOWLIST,
 )
 from .exceptions import KepcoOnAuthError, KepcoOnProtocolError, KepcoOnSessionExpired
@@ -203,37 +202,6 @@ class KepcoOnAuth:
     async def async_export_session_snapshot(self) -> KepcoAccountSession:
         """Return the current session snapshot without exposing credentials."""
         return self._require_current_session()
-
-    async def async_sso_check(self) -> str:
-        """Run the captured SSO check when explicitly needed by validation."""
-        session = self._require_current_session()
-        if session.user_mng_seqno is None:
-            raise KepcoOnProtocolError("KEPCO ON session is missing user sequence")
-        payload = await self._transport.request_json(
-            ENDPOINT_SSO_CHECK,
-            {
-                "userId": session.user_id,
-                "userMngSeqno": session.user_mng_seqno,
-                "name": session.member_name,
-                "autoLogin": "Y",
-            },
-            refresh_token=session.refresh_token,
-        )
-        if payload.get("loginChk") != "Y":
-            raise KepcoOnSessionExpired("KEPCO ON SSO session expired")
-        refresh_token = self._optional_str(payload, "refreshToken") or session.refresh_token
-        cookies = self._export_cookie_snapshot()
-        if refresh_token != session.refresh_token or cookies != session.cookies:
-            await self._save_current_session(
-                replace(
-                    session,
-                    refresh_token=refresh_token,
-                    cookies=cookies,
-                    updated_at=self._clock(),
-                ),
-                bump_generation=refresh_token != session.refresh_token,
-            )
-        return refresh_token
 
     async def async_protected_request(
         self,

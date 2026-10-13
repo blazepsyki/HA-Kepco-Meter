@@ -320,17 +320,3 @@ async def test_diagnostics_handles_bad_polling_option_and_dataclass_probe_failur
 
     assert diagnostics["config_entry"]["polling_interval_hours"] == 6
     assert diagnostics["parsed_fields"]["bill"] == []
-
-
-@pytest.mark.asyncio
-async def test_diagnostics_returns_empty_mapping_if_sanitizer_shape_changes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import custom_components.kepco_on.diagnostics as diagnostics_module
-    from custom_components.kepco_on.diagnostics import async_get_config_entry_diagnostics
-
-    monkeypatch.setattr(diagnostics_module, "_sanitize", lambda value, **kwargs: object())
-
-    assert (
-        await async_get_config_entry_diagnostics(cast("Any", FakeHass()), FakeConfigEntry()) == {}
-    )

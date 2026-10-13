@@ -206,7 +206,7 @@ def _parse_customer_row(row: object, account_uid_hash: str, display_index: int) 
 
 
 def parse_house_bill(payload: dict[str, object]) -> KepcoBill:
-    """Parse a 주택용 monthly billing history (mainChart) response into a bill."""
+    """Parse residential monthly billing history from mainChart."""
     raw_rows = payload.get("dlt_chart")
     if not isinstance(raw_rows, list) or not raw_rows:
         raise KepcoOnProtocolError("house bill chart is missing")
@@ -288,24 +288,6 @@ def parse_power_planner_value(
     return value / 1000 if value is not None and unit_wh else value
 
 
-def parse_power_planner(
-    payload: dict[str, object], *, current_unit_wh: bool = False, predicted_unit_wh: bool = False
-) -> tuple[float | None, float | None]:
-    """Keep legacy defaults; explicitly enable the reported prediction Wh profile.
-
-    The combined-contract compatibility profile follows the user's working
-    request and conversion. It is not proof of a universal KEPCO unit contract.
-    Other profiles continue to leave the ambiguous prediction field unmapped.
-    """
-    current = parse_power_planner_value(payload, "F_AP_QT", unit_wh=current_unit_wh)
-    predicted = (
-        parse_power_planner_value(payload, "PREDICT_TOT", unit_wh=True)
-        if predicted_unit_wh
-        else None
-    )
-    return current, predicted
-
-
 def _parse_float(value: object, field_name: str) -> float | None:
     if value is None:
         return None
@@ -341,9 +323,9 @@ def _parse_house_period(value: object) -> tuple[date | None, date | None]:
 def parse_bill(payload: dict[str, object], requested_month: str | None) -> KepcoBill:
     """Parse a KEPCO apartment bill detail response."""
     result = _result_payload(payload)
-    _raise_for_bill_status(payload, result)
+    _raise_for_bill_status(payload)
 
-    response_bill_month = parse_year_month(_first_present(result, "DO_BILL_YM"), "DO_BILL_YM")
+    response_bill_month = parse_year_month(result.get("DO_BILL_YM"), "DO_BILL_YM")
     effective_month = (
         parse_year_month(requested_month, "requested_month")
         if requested_month
@@ -358,37 +340,35 @@ def parse_bill(payload: dict[str, object], requested_month: str | None) -> Kepco
     return KepcoBill(
         bill_month=effective_month,
         response_bill_month=response_bill_month,
-        period_start=parse_date(_field(result, "DO_FROM_MMDD"), "period_start"),
-        period_end=parse_date(_field(result, "DO_TO_MMDD"), "period_end"),
-        usage_kwh=parse_int(_field(result, "DO_KWH"), "usage_kwh"),
-        household_usage_kwh=parse_int(_field(result, "DO_TP_RSD_KWH"), "household_usage_kwh"),
-        common_usage_kwh=parse_int(_field(result, "DO_TP_CMNUS_KWH"), "common_usage_kwh"),
-        previous_usage_kwh=parse_int(_field(result, "DO_BEF_KWH"), "previous_usage_kwh"),
-        last_year_usage_kwh=parse_int(_field(result, "DO_LAST_YEAR_KWH"), "last_year_usage_kwh"),
+        period_start=parse_date(result.get("DO_FROM_MMDD"), "period_start"),
+        period_end=parse_date(result.get("DO_TO_MMDD"), "period_end"),
+        usage_kwh=parse_int(result.get("DO_KWH"), "usage_kwh"),
+        household_usage_kwh=parse_int(result.get("DO_TP_RSD_KWH"), "household_usage_kwh"),
+        common_usage_kwh=parse_int(result.get("DO_TP_CMNUS_KWH"), "common_usage_kwh"),
+        previous_usage_kwh=parse_int(result.get("DO_BEF_KWH"), "previous_usage_kwh"),
+        last_year_usage_kwh=parse_int(result.get("DO_LAST_YEAR_KWH"), "last_year_usage_kwh"),
         building_average_kwh=parse_int(
-            _field(result, "DO_APT_HOUS_USKI_AVG"),
+            result.get("DO_APT_HOUS_USKI_AVG"),
             "building_average_kwh",
         ),
         apartment_average_kwh=parse_int(
-            _field(result, "DO_APT_TOT_USKI_AVG"),
+            result.get("DO_APT_TOT_USKI_AVG"),
             "apartment_average_kwh",
         ),
-        current_meter_reading=parse_int(_field(result, "DO_WHM_MTR_ALW"), "current_meter_reading"),
-        previous_meter_reading=parse_int(
-            _field(result, "DO_BEF_MTR_ALW"), "previous_meter_reading"
-        ),
-        meter_reading_day=parse_day_of_month(_field(result, "DO_GUMCHM_DD"), "meter_reading_day"),
-        amount_krw=parse_int(_field(result, "DO_PRE_REQ_BILL"), "amount_krw"),
+        current_meter_reading=parse_int(result.get("DO_WHM_MTR_ALW"), "current_meter_reading"),
+        previous_meter_reading=parse_int(result.get("DO_BEF_MTR_ALW"), "previous_meter_reading"),
+        meter_reading_day=parse_day_of_month(result.get("DO_GUMCHM_DD"), "meter_reading_day"),
+        amount_krw=parse_int(result.get("DO_PRE_REQ_BILL"), "amount_krw"),
         charge=KepcoChargeBreakdown(
-            subtotal_krw=parse_int(_field(result, "DO_PRE_BILL"), "subtotal"),
-            base_krw=parse_int(_field(result, "DO_PRE_BASE_BILL"), "base"),
-            energy_krw=parse_int(_field(result, "DO_PRE_KWHBILL"), "energy"),
-            climate_krw=parse_int(_field(result, "DO_PRE_CLMT_ENVRN_BILL"), "climate"),
-            fuel_krw=parse_int(_field(result, "DO_PRE_FUEL_COST_ADJ_BILL"), "fuel"),
-            child_discount_krw=parse_int(_field(result, "DO_PRE_CHILD_DC_BILL"), "child_discount"),
-            vat_krw=parse_int(_field(result, "DO_PRE_BILL_VAT"), "vat"),
-            fund_krw=parse_int(_field(result, "DO_PRE_PUBCHGE"), "fund"),
-            rounding_krw=parse_int(_field(result, "DO_PRE_REQ_BILLODD"), "rounding"),
+            subtotal_krw=parse_int(result.get("DO_PRE_BILL"), "subtotal"),
+            base_krw=parse_int(result.get("DO_PRE_BASE_BILL"), "base"),
+            energy_krw=parse_int(result.get("DO_PRE_KWHBILL"), "energy"),
+            climate_krw=parse_int(result.get("DO_PRE_CLMT_ENVRN_BILL"), "climate"),
+            fuel_krw=parse_int(result.get("DO_PRE_FUEL_COST_ADJ_BILL"), "fuel"),
+            child_discount_krw=parse_int(result.get("DO_PRE_CHILD_DC_BILL"), "child_discount"),
+            vat_krw=parse_int(result.get("DO_PRE_BILL_VAT"), "vat"),
+            fund_krw=parse_int(result.get("DO_PRE_PUBCHGE"), "fund"),
+            rounding_krw=parse_int(result.get("DO_PRE_REQ_BILLODD"), "rounding"),
         ),
         history=history,
     )
@@ -413,7 +393,7 @@ def _result_payload(payload: dict[str, object]) -> dict[str, object]:
     return result
 
 
-def _raise_for_bill_status(payload: dict[str, object], result: dict[str, object]) -> None:
+def _raise_for_bill_status(payload: dict[str, object]) -> None:
     rs_msg = payload.get("rsMsg")
     if not isinstance(rs_msg, dict) or rs_msg.get("statusCode") != "S":
         raise KepcoOnProtocolError("KEPCO ON bill status is not successful")
@@ -514,20 +494,6 @@ def _optional_str(row: dict[str, object], key: str) -> str | None:
     return value or None
 
 
-def _field(primary: dict[str, object], primary_key: str) -> object:
-    return primary.get(primary_key)
-
-
-def _first_present(
-    primary: dict[str, object],
-    *keys: str,
-) -> object:
-    for key in keys:
-        if key in primary:
-            return primary[key]
-    return None
-
-
 __all__ = [
     "parse_bill",
     "parse_customers",
@@ -535,7 +501,6 @@ __all__ = [
     "parse_day_of_month",
     "parse_house_bill",
     "parse_int",
-    "parse_power_planner",
     "parse_power_planner_return_code",
     "parse_power_planner_value",
     "parse_year_month",

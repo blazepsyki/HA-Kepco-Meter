@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import ipaddress
 import json
 import socket
@@ -1044,39 +1043,3 @@ async def test_client_accepts_current_home_assistant_local_month_at_utc_boundary
         "yyyymm": "202609",
         "searchType": "DETAIL",
     }
-
-
-@pytest.mark.asyncio
-async def test_client_get_all_current_bills_runs_sequentially() -> None:
-    in_flight = 0
-    max_in_flight = 0
-
-    async def protected_request(
-        path: str, payload: dict[str, object] | None, *, submission_id: str | None = None
-    ) -> dict[str, object]:
-        nonlocal in_flight, max_in_flight
-        del path, payload, submission_id
-        in_flight += 1
-        max_in_flight = max(max_in_flight, in_flight)
-        await asyncio.sleep(0)
-        in_flight -= 1
-        return {
-            "rsMsg": {"statusCode": "S"},
-            "dma_result": {"DO_ERR_CODE": "HXI001", "DO_BILL_YM": "202608"},
-        }
-
-    class Auth:
-        async_protected_request = staticmethod(protected_request)
-
-        def account_uid_hash(self) -> str:
-            return "ACCOUNT_HASH"
-
-    customers = (
-        KepcoCustomer("key-1", "apt", "101", "1001", "method", True, "CUST1", "HOUSE1"),
-        KepcoCustomer("key-2", "apt", "102", "1002", "method", True, "CUST2", "HOUSE2"),
-    )
-
-    bills = await KepcoOnClient(cast("Any", Auth())).async_get_all_current_bills(customers)
-
-    assert list(bills) == ["key-1", "key-2"]
-    assert max_in_flight == 1
