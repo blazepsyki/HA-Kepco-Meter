@@ -526,11 +526,12 @@ async def test_planner_sensors_publish_same_ids_and_independent_status(hass: Hom
     entities = [
         PowerPlannerSensor(coordinator, customer, description)
         for description in PLANNER_DESCRIPTIONS
+        if description.entity_registry_enabled_default
     ]
     sensors = await publish(
         hass,
         cast("list[Any]", entities),
-        tuple(description.key for description in PLANNER_DESCRIPTIONS),
+        tuple(entity.entity_description.key for entity in entities),
     )
     for entity in sensors.values():
         state = hass.states.get(entity.entity_id)
@@ -676,12 +677,23 @@ async def test_expiration_replays_at_most_once(
             return {}
 
         monkeypatch.setattr(client, "async_login", login)
+
+        async def validate(customers: set[str]) -> None:
+            return None
+
+        async def snapshot() -> PowerPlannerSnapshot:
+            return PowerPlannerSnapshot(status="ok")
+
         monkeypatch.setattr(client, "_json", response)
+        monkeypatch.setattr(client, "async_validate_customers", validate)
+        monkeypatch.setattr(client, "_read_snapshot", snapshot)
         if password is None or failures == 2:
             with pytest.raises(KepcoOnAuthError):
                 await client.async_poll("TEST_USER", password, set(), fetch=False)
         else:
-            assert await client.async_poll("TEST_USER", password, set(), fetch=False) is None
+            result = await client.async_poll("TEST_USER", password, set(), fetch=False)
+            assert result is not None
+            assert result.status == "ok"
         assert len(login_calls) == expected_logins
 
 
@@ -1036,11 +1048,11 @@ async def test_planner_platform_reuses_old_ids_and_does_not_replace_other_custom
     await sensor.async_setup_entry(hass, cast("Any", config_entry), cast("Any", entities.extend))
     bound = [entity for entity in entities if entity.customer.stable_key == "bound"]
     other = [entity for entity in entities if entity.customer.stable_key == "other"]
-    assert len(bound) == 39
+    assert len(bound) == 56
     assert len(other) == 34
-    assert len({entity.unique_id for entity in entities}) == 73
+    assert len({entity.unique_id for entity in entities}) == 90
     assert all(isinstance(entity, sensor.KepcoOnSensor) for entity in other)
-    assert len([entity for entity in bound if isinstance(entity, PowerPlannerSensor)]) == 7
+    assert len([entity for entity in bound if isinstance(entity, PowerPlannerSensor)]) == 24
     current = next(
         entity for entity in bound if entity.entity_description.key == "current_period_usage"
     )
