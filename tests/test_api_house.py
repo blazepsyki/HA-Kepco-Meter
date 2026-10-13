@@ -46,6 +46,33 @@ def _house_customer(*, change_ymd: str = "20260409") -> KepcoCustomer:
     )
 
 
+class HouseAuth:
+    """Return synthetic endpoint responses and record the business requests."""
+
+    def __init__(
+        self, responses: dict[str, dict[str, object] | BaseException] | None = None
+    ) -> None:
+        self.responses: dict[str, dict[str, object] | BaseException] = {
+            ENDPOINT_MAIN_CHART: _load_fixture("house_main_chart.json"),
+            ENDPOINT_HOUSE_BILL_DETAIL: _load_fixture("house_bill_detail.json"),
+            ENDPOINT_POWER_PLANNER: _load_fixture("house_power_planner.json"),
+        }
+        self.responses.update(responses or {})
+        self.calls: list[tuple[str, dict[str, object] | None, str | None]] = []
+
+    def account_uid_hash(self) -> str:
+        return "synthetic-account"
+
+    async def async_protected_request(
+        self, path: str, payload: dict[str, object] | None, *, submission_id: str | None = None
+    ) -> dict[str, object]:
+        self.calls.append((path, payload, submission_id))
+        response = self.responses[path]
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+
 @pytest.mark.asyncio
 async def test_house_bill_combines_main_chart_and_power_planner() -> None:
     calls: list[tuple[str, dict[str, object] | None, str | None]] = []

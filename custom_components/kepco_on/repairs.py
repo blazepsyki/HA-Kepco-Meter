@@ -17,6 +17,8 @@ type KepcoOnRepairIssueKind = Literal[
     "bill_schema_changed",
     "unsupported_account",
     "session_restore_failed",
+    "power_planner_auth_required",
+    "power_planner_unavailable",
 ]
 
 ISSUE_SEVERITIES: dict[KepcoOnRepairIssueKind, IssueSeverity] = {
@@ -25,6 +27,8 @@ ISSUE_SEVERITIES: dict[KepcoOnRepairIssueKind, IssueSeverity] = {
     "bill_schema_changed": IssueSeverity.WARNING,
     "unsupported_account": IssueSeverity.ERROR,
     "session_restore_failed": IssueSeverity.WARNING,
+    "power_planner_auth_required": IssueSeverity.WARNING,
+    "power_planner_unavailable": IssueSeverity.WARNING,
 }
 
 
