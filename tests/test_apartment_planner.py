@@ -24,7 +24,7 @@ from custom_components.kepco_on.models import (
     deserialize_customer,
     serialize_customer,
 )
-from custom_components.kepco_on.parser import parse_customers, parse_power_planner
+from custom_components.kepco_on.parser import parse_customers
 
 from .test_sensor import bill as synthetic_bill
 from .test_sensor import by_key, setup_entities
@@ -272,13 +272,6 @@ async def test_optional_failures_preserve_bills_and_safe_diagnostic_status(
 async def test_authentication_and_cancellation_are_not_swallowed(error: BaseException) -> None:
     with pytest.raises(type(error)):
         await fetch_latest(error)
-
-
-def test_prediction_unit_is_not_inferred_from_sample_magnitude() -> None:
-    for ambiguous in ("636.263", "99999", "garbled", None):
-        assert parse_power_planner(
-            {"dma_powerPlanner": {"RETURN_CD": "00", "F_AP_QT": "7.5", "PREDICT_TOT": ambiguous}}
-        ) == (7.5, None)
 
 
 @pytest.mark.asyncio

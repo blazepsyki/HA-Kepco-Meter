@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 const BASE_URL = "https://online.kepco.co.kr";
 const START_URL = `${BASE_URL}/MYM001D00`;
-const OUTPUT_FILE = "login-schema.safe.json";
+const OUTPUT_FILE = resolve(dirname(fileURLToPath(import.meta.url)), "..", ".local", "login-schema.safe.json");
 const TEMP_PROFILE_PREFIX = "kepco-login-schema-";
 
 export const ALLOWED_ENDPOINTS = Object.freeze([
@@ -609,6 +609,7 @@ async function runCapture() {
 
   const safeCapture = safeCaptureJson(records, secrets, failures);
   const serialized = safeCapture.json;
+  await mkdir(dirname(OUTPUT_FILE), { recursive: true });
   await writeFile(OUTPUT_FILE, serialized, { encoding: "utf8", flag: "wx" });
   output.write(
     `Wrote ${OUTPUT_FILE}; endpoints=${records.length}; hash=${safeCapture.hash}; security-scan=passed\n`,

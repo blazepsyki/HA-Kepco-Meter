@@ -57,7 +57,7 @@ class KepcoAccountSession:
 
 @dataclass(frozen=True, slots=True)
 class KepcoCustomer:
-    """A selectable KEPCO apartment contract."""
+    """A selectable KEPCO customer contract."""
 
     stable_key: str
     apartment_name: str
@@ -71,7 +71,7 @@ class KepcoCustomer:
 
     @property
     def is_house(self) -> bool:
-        """Return True for 주택용 direct contracts (non-apartment)."""
+        """Return True for residential direct contracts."""
         return self.contract_method.startswith("주택용")
 
     @property
@@ -143,7 +143,7 @@ class KepcoChargeBreakdown:
 
 @dataclass(frozen=True, slots=True)
 class KepcoBill:
-    """Parsed monthly apartment bill."""
+    """Parsed monthly bill for a supported customer contract."""
 
     bill_month: str
     response_bill_month: str | None = None
@@ -172,15 +172,6 @@ class KepcoBill:
     # Names (never values) of optional fields whose format was not recognised.
     # Those fields are None; "history.<name>" marks a field of one history point.
     invalid_fields: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True, slots=True)
-class KepcoCustomerUpdateResult:
-    """Latest update result for one customer."""
-
-    customer: KepcoCustomer
-    bill: KepcoBill | None
-    error_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,7 +303,6 @@ __all__ = [
     "KepcoCookie",
     "KepcoCoordinatorData",
     "KepcoCustomer",
-    "KepcoCustomerUpdateResult",
     "KepcoUsageHistoryPoint",
     "customer_location_name",
     "deserialize_customer",

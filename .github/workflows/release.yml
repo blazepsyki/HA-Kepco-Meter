@@ -109,6 +109,7 @@ jobs:
             --output="${{ steps.release.outputs.asset }}" \
             "${RELEASE_SHA}:custom_components/kepco_on"
           unzip -t "${{ steps.release.outputs.asset }}"
+          python tools/release_notes.py --version "${{ steps.release.outputs.version }}"
 
       - name: Publish GitHub and HACS release
         if: steps.release.outputs.publish == 'true'
@@ -121,11 +122,11 @@ jobs:
               "${{ steps.release.outputs.asset }}#HACS 설치 파일" \
               --verify-tag \
               --title "KEPCO ON ${tag}" \
-              --notes-file RELEASE_NOTES.md
+              --notes-file .local/release-notes.md
           else
             gh release create "${tag}" \
               "${{ steps.release.outputs.asset }}#HACS 설치 파일" \
               --target "${RELEASE_SHA}" \
               --title "KEPCO ON ${tag}" \
-              --notes-file RELEASE_NOTES.md
+              --notes-file .local/release-notes.md
           fi

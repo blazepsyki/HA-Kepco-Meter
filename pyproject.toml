@@ -7,10 +7,15 @@ requires-python = ">=3.14"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--strict-markers"
+cache_dir = ".local/pytest"
 
 [tool.coverage.run]
 branch = true
 source = ["custom_components/kepco_on"]
+data_file = ".local/.coverage"
+
+[tool.coverage.html]
+directory = ".local/htmlcov"
 
 [tool.coverage.report]
 fail_under = 95
@@ -25,7 +30,8 @@ exclude_also = [
 line-length = 100
 target-version = "py314"
 src = ["custom_components", "tests"]
-extend-exclude = ["docs"]
+extend-exclude = [".local"]
+cache-dir = ".local/ruff"
 
 [tool.ruff.lint]
 select = [
@@ -56,10 +62,10 @@ warn_unreachable = true
 files = ["custom_components/kepco_on", "tests"]
 namespace_packages = true
 explicit_package_bases = true
+cache_dir = ".local/mypy"
 
 [[tool.mypy.overrides]]
 module = [
   "aresponses.*",
-  "pytest_homeassistant_custom_component.*",
 ]
 ignore_missing_imports = true

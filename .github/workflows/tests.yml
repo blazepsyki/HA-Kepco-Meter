@@ -12,6 +12,8 @@ jobs:
   tests:
     name: Tests
     runs-on: ubuntu-24.04
+    env:
+      PYTHONPYCACHEPREFIX: .local/pycache
 
     steps:
       - name: Check out repository

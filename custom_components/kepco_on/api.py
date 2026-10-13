@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Protocol, cast
@@ -17,7 +17,6 @@ from .const import (
     BASE_URL,
     COMBINED_APARTMENT_PLANNER_CONTRACT,
     ENDPOINT_APT_BILL_DETAIL,
-    ENDPOINT_CUST_NO_LIST,
     ENDPOINT_HOUSE_BILL_DETAIL,
     ENDPOINT_IS_CORP,
     ENDPOINT_LOGIN_INDI,
@@ -25,7 +24,6 @@ from .const import (
     ENDPOINT_MYPAGE_CUST_NO_LIST,
     ENDPOINT_POWER_PLANNER,
     ENDPOINT_SESSION_CHECK,
-    ENDPOINT_SSO_CHECK,
     PAGE_URL,
     VERSION,
 )
@@ -66,10 +64,8 @@ ALLOWED_PATHS = frozenset(
         ENDPOINT_POWER_PLANNER,
         ENDPOINT_LOGIN_INDI,
         ENDPOINT_SESSION_CHECK,
-        ENDPOINT_SSO_CHECK,
         ENDPOINT_IS_CORP,
         ENDPOINT_MYPAGE_CUST_NO_LIST,
-        ENDPOINT_CUST_NO_LIST,
         ENDPOINT_APT_BILL_DETAIL,
     }
 )
@@ -492,15 +488,6 @@ class KepcoOnClient:
             power_planner_current_status=statuses.get("F_AP_QT"),
             power_planner_prediction_status=statuses.get("PREDICT_TOT"),
         )
-
-    async def async_get_all_current_bills(
-        self, customers: Sequence[KepcoCustomer]
-    ) -> Mapping[str, KepcoBill]:
-        """Fetch current bills sequentially for all selected customers."""
-        bills: dict[str, KepcoBill] = {}
-        for customer in customers:
-            bills[customer.stable_key] = await self.async_get_bill(customer)
-        return bills
 
     def _validated_month(self, month: str | None) -> str | None:
         if month is None:
