@@ -17,3 +17,4 @@ htmlcov/
 node_modules/
 .worktrees/
 .local/
+superpower
