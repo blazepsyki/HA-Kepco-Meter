@@ -885,8 +885,7 @@ async def test_options_flow_default_form_values() -> None:
     assert all("selected_customers" not in str(key.schema) for key in schema)
     assert all("selected_customers" not in str(config) for config in selector_configs)
     defaults = [key.default() for key in schema if callable(key.default)]
-    password_key = next(key for key in schema if key.schema == CONF_PASSWORD)
-    assert not callable(password_key.default)
+    assert all(key.schema != CONF_PASSWORD for key in schema)
     assert str(DEFAULT_POLLING_INTERVAL_HOURS) in defaults
     assert DEFAULT_CO2_FACTOR_KG_PER_KWH in defaults
     co2_selector = next(
