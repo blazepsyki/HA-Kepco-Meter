@@ -25,8 +25,6 @@ USERNAME_SECRET = " USERNAME_SECRET_CANARY "
 PASSWORD_SECRET = "PASSWORD_SECRET_CANARY"
 REFRESH_SECRET = "REFRESH_SECRET_CANARY"
 
-pytestmark = pytest.mark.usefixtures("socket_enabled")
-
 
 class MemorySessionStore:
     """In-memory auth store with save/load counters."""
