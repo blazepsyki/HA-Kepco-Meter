@@ -120,7 +120,7 @@ npm run capture:login-schema
 
 ## 릴리스와 실제 환경 확인
 
-GitHub `Tests`는 형식·lint·타입·Python coverage·Node 테스트·의존성 검사를 실행합니다. `Validate`는 HACS와 Hassfest를 실행합니다. `Release`는 `main`의 같은 커밋에서 두 검증이 성공한 경우에만 배포하며, `main`이 진행됐거나 같은 버전이 이미 배포됐다면 생성을 건너뜁니다.
+GitHub `Tests`는 형식·lint·타입·Python coverage·Node 테스트·의존성 검사를 실행합니다. `Validate`는 HACS와 Hassfest를 실행합니다. `Release`의 자동 실행은 중지하며 `workflow_dispatch` 수동 실행만 허용합니다. 배포가 필요할 때 GitHub의 Actions > Release > Run workflow에서 `main`을 선택합니다. `main`의 같은 커밋에서 `Tests`와 `Validate`가 모두 성공한 경우에만 배포하며, `main`이 진행됐거나 같은 버전이 이미 배포됐다면 생성을 건너뜁니다.
 
 배포 버전은 `const.py`, `manifest.json`, `pyproject.toml`에서 일치해야 합니다. 해당 버전의 안내는 `CHANGELOG.md`에 작성합니다. `tools/release_notes.py`가 해당 절만 `.local/release-notes.md`로 추출하므로 별도의 배포 안내 원본은 두지 않습니다.
 

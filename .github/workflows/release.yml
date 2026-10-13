@@ -1,31 +1,25 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows:
-      - Tests
-    types:
-      - completed
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   actions: read
   contents: write
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_sha }}
+  group: release-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   release:
     name: Publish HACS release
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
 
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      RELEASE_SHA: ${{ github.sha }}
 
     steps:
       - name: Check out validated commit
@@ -34,7 +28,7 @@ jobs:
           ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 0
 
-      - name: Wait for HACS and Hassfest validation
+      - name: Wait for Tests and HACS validation
         shell: bash
         run: |
           set -euo pipefail
@@ -45,13 +39,20 @@ jobs:
               python -c '
           import json
           import sys
-          runs = [
-              run
-              for run in json.load(sys.stdin).get("workflow_runs", [])
-              if run.get("name") == "Validate"
+          runs = json.load(sys.stdin).get("workflow_runs", [])
+          latest = [
+              max(
+                  (run for run in runs if run.get("name") == name),
+                  key=lambda item: item.get("created_at", ""),
+                  default={},
+              )
+              for name in ("Tests", "Validate")
           ]
-          run = max(runs, key=lambda item: item.get("created_at", ""), default={})
-          print(run.get("status", "missing"), run.get("conclusion") or "pending")
+          if all(run.get("status") == "completed" for run in latest):
+              conclusion = "success" if all(run.get("conclusion") == "success" for run in latest) else "failure"
+              print("completed", conclusion)
+          else:
+              print("pending", "pending")
           ' <<<"${run_json}"
             )
             if [[ "${status}" == "completed" ]]; then
@@ -59,7 +60,7 @@ jobs:
               break
             fi
             if [[ "${attempt}" == "30" ]]; then
-              echo "Validate workflow did not finish successfully in time." >&2
+              echo "Tests and Validate workflows did not finish successfully in time." >&2
               exit 1
             fi
             sleep 10
