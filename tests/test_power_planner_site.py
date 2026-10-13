@@ -809,18 +809,28 @@ def option_fakes(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return state
 
 
+@pytest.mark.parametrize("saved_password", [False, True])
 async def test_options_enable_binds_one_customer_without_storing_password(
     option_fakes: dict[str, Any],
+    saved_password: bool,
 ) -> None:
     from custom_components.kepco_on.config_flow import KepcoOnOptionsFlow
 
     from .test_config_flow import attach_fake_hass, make_entry
 
-    flow = KepcoOnOptionsFlow(cast("Any", make_entry()))
+    entry = make_entry()
+    if saved_password:
+        entry.data[CONF_PASSWORD] = "TEST_PASSWORD"
+    flow = KepcoOnOptionsFlow(cast("Any", entry))
     attach_fake_hass(flow)
-    result = await flow.async_step_init(
-        {OPT_ENABLE_POWER_PLANNER: True, CONF_PASSWORD: "TEST_PASSWORD"}
-    )
+    result = await flow.async_step_init({OPT_ENABLE_POWER_PLANNER: True})
+    if not saved_password:
+        assert result["step_id"] == "power_planner_auth"
+        schema = result["data_schema"]
+        assert schema is not None
+        password_key = next(key for key in schema.schema if key.schema == CONF_PASSWORD)
+        assert not callable(password_key.default)
+        result = await flow.async_step_power_planner_auth({CONF_PASSWORD: "TEST_PASSWORD"})
     assert result["type"] == "create_entry"
     assert result["data"][OPT_POWER_PLANNER_CUSTOMER_ID] == "key-1"
     assert CONF_PASSWORD not in result["data"]
@@ -844,7 +854,7 @@ async def test_options_failure_does_not_enable_provider(
     attach_fake_hass(flow)
     inputs: dict[str, Any] = {OPT_ENABLE_POWER_PLANNER: True}
     if case != "missing_password":
-        inputs[CONF_PASSWORD] = "TEST_PASSWORD"
+        entry.data[CONF_PASSWORD] = "TEST_PASSWORD"
     if case == "invalid_password":
         option_fakes["error"] = KepcoOnAuthError("PRIVATE")
     if case == "mismatch":
@@ -852,9 +862,14 @@ async def test_options_failure_does_not_enable_provider(
     if case == "storage_error":
         option_fakes["error"] = OSError("PRIVATE")
     if case == "bad_password_type":
-        inputs[CONF_PASSWORD] = 123
+        entry.data[CONF_PASSWORD] = 123
     result = await flow.async_step_init(inputs)
     assert result["type"] == "form"
+    if case in {"missing_password", "invalid_password", "bad_password_type"}:
+        assert result["step_id"] == "power_planner_auth"
+    if case == "invalid_password":
+        result = await flow.async_step_power_planner_auth({CONF_PASSWORD: "TEST_PASSWORD"})
+        assert result["errors"] == {"base": "invalid_auth"}
     assert OPT_ENABLE_POWER_PLANNER not in entry.options
     assert all(session.closed for session in option_fakes["sessions"])
 
@@ -1119,3 +1134,101 @@ async def test_site_binding_skips_only_same_customer_on_planner(bound: bool) -> 
     assert any(path == ENDPOINT_POWER_PLANNER for path, _, _ in auth.calls) == (not bound)
     if bound:
         assert bill.current_period_usage_kwh is None
+
+
+@pytest.mark.parametrize("already_enabled", [False, True])
+async def test_expired_planner_session_prompts_only_when_authentication_is_needed(
+    option_fakes: dict[str, Any],
+    already_enabled: bool,
+) -> None:
+    from custom_components.kepco_on.config_flow import KepcoOnOptionsFlow
+    from custom_components.kepco_on.const import OPT_POLLING_INTERVAL_HOURS
+
+    from .test_config_flow import attach_fake_hass, make_entry
+
+    option_fakes["store"].session_id = "TEST_SESSION"
+    option_fakes["error"] = KepcoOnSessionExpired("PRIVATE")
+    entry = make_entry()
+    if already_enabled:
+        entry.options = {OPT_ENABLE_POWER_PLANNER: True, OPT_POWER_PLANNER_CUSTOMER_ID: "key-1"}
+        entry.runtime_data = SimpleNamespace(
+            power_planner=SimpleNamespace(
+                data=PowerPlannerData({"key-1": PowerPlannerSnapshot(status="auth_required")})
+            )
+        )
+    original_data = dict(entry.data)
+    original_options = dict(entry.options)
+    flow = KepcoOnOptionsFlow(cast("Any", entry))
+    attach_fake_hass(flow)
+    result = await flow.async_step_init(
+        {OPT_ENABLE_POWER_PLANNER: True, OPT_POLLING_INTERVAL_HOURS: 3}
+    )
+    assert result["step_id"] == "power_planner_auth"
+    assert option_fakes["logins"] == []
+    assert entry.data == original_data
+    assert entry.options == original_options
+    option_fakes["error"] = None
+    result = await flow.async_step_power_planner_auth({CONF_PASSWORD: "ONE_TIME_PASSWORD"})
+    assert result["type"] == "create_entry"
+    assert result["data"][OPT_POLLING_INTERVAL_HOURS] == 3
+    assert result["data"][OPT_POWER_PLANNER_CUSTOMER_ID] == "key-1"
+    assert CONF_PASSWORD not in result["data"]
+    assert entry.data == original_data
+    assert flow._planner_options is None
+    assert all(session.closed for session in option_fakes["sessions"])
+
+
+@pytest.mark.parametrize("password", ["", None, 123])
+async def test_conditional_auth_rejects_empty_or_invalid_password_without_network(
+    option_fakes: dict[str, Any],
+    password: object,
+) -> None:
+    from custom_components.kepco_on.config_flow import KepcoOnOptionsFlow
+
+    from .test_config_flow import attach_fake_hass, make_entry
+
+    entry = make_entry()
+    flow = KepcoOnOptionsFlow(cast("Any", entry))
+    attach_fake_hass(flow)
+    await flow.async_step_init({OPT_ENABLE_POWER_PLANNER: True})
+    result = await flow.async_step_power_planner_auth({CONF_PASSWORD: password})
+    assert result["step_id"] == "power_planner_auth"
+    assert result["errors"] == {"base": "invalid_auth"}
+    assert option_fakes["logins"] == []
+    assert not entry.options
+
+
+async def test_auth_step_without_pending_options_returns_main_form(
+    option_fakes: dict[str, Any],
+) -> None:
+    from custom_components.kepco_on.config_flow import KepcoOnOptionsFlow
+
+    from .test_config_flow import attach_fake_hass, make_entry
+
+    flow = KepcoOnOptionsFlow(cast("Any", make_entry()))
+    attach_fake_hass(flow)
+    result = await flow.async_step_power_planner_auth({CONF_PASSWORD: "UNEXPECTED_PASSWORD"})
+    assert result["step_id"] == "init"
+    assert option_fakes["sessions"] == []
+
+
+async def test_corrupt_planner_store_allows_conditional_sign_in(
+    option_fakes: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from custom_components.kepco_on.config_flow import KepcoOnOptionsFlow
+
+    from .test_config_flow import attach_fake_hass, make_entry
+
+    async def bad_load() -> str | None:
+        raise KepcoOnProtocolError("PRIVATE")
+
+    monkeypatch.setattr(option_fakes["store"], "async_load", bad_load)
+    flow = KepcoOnOptionsFlow(cast("Any", make_entry()))
+    attach_fake_hass(flow)
+    result = await flow.async_step_init({OPT_ENABLE_POWER_PLANNER: True})
+    assert result["step_id"] == "power_planner_auth"
+    assert option_fakes["store"].clears == 1
+    result = await flow.async_step_power_planner_auth({CONF_PASSWORD: "ONE_TIME_PASSWORD"})
+    assert result["type"] == "create_entry"
+    assert CONF_PASSWORD not in result["data"]
