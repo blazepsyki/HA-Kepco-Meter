@@ -89,7 +89,7 @@ Repository: https://github.com/1bobby-git/HA-Kepco-Meter
 
 한전ON이 `당월 세대 사용량`과 `당월 공용 사용량`을 모두 비워서 반환하면 전체 사용량을 세대 사용량으로, 공용 사용량을 `0 kWh`로 보정합니다. 한쪽 또는 양쪽의 실제 값이 있으면 한전ON 원본 값을 우선 사용하고 필요한 한쪽만 전체 사용량과의 차이로 계산합니다.
 
-주택용 직접계약은 청구 상세 대신 `mainChart` 13개월 이력을 사용하므로 `전월 사용량`과 `전년동월 사용량`도 같은 이력의 해당 월 값으로 채웁니다. 해당 월이 이력에 없으면 `unknown`입니다.
+주택용 직접계약의 `전월 사용량`과 `전년동월 사용량`은 같은 월 청구 상세의 값을 우선 사용하고, 상세에 값이 없으면 `mainChart` 24개월 이력의 해당 월 값으로 채웁니다. 둘 다 없으면 `unknown`입니다.
 
 아파트(종합계약)은 사용자 재현 보고에 따른 호환 프로필로 Power Planner의 `F_AP_QT`와 `PREDICT_TOT`를 각각 1000으로 나눠 기존 두 센서에 전달합니다. 이 단위 해석은 한전 공통 규격으로 검증되지 않았으며 `conversion_basis=user_reported_combined_contract`로 명시합니다. 다른 계약의 예측값 보류는 유지합니다. 값이 없는 필드만 `unknown`이고 실제 0은 유지됩니다.
 
@@ -148,7 +148,7 @@ Energy Dashboard에는 `당월지침` 센서를 전력 사용량 소스로 추�
 
 ## 응답 액션
 
-`kepco_on.get_monthly_bill`은 한 고객의 청구 상세를 반환합니다. 아파트/오피스텔은 지정 월을 조회하고, 주택용 직접계약은 한전ON `mainChart`의 최신 청구 이력을 사용합니다.
+`kepco_on.get_monthly_bill`은 한 고객의 청구 상세를 반환합니다. 아파트/오피스텔과 주택용 직접계약 모두 지정한 월을 조회합니다. 주택용은 `mainChart` 이력에서 요청한 월을 고른 뒤 같은 월의 청구 상세를 결합합니다. 해당 월이 이력에 없으면 조회 오류를 반환합니다.
 
 ```yaml
 action: kepco_on.get_monthly_bill
@@ -217,6 +217,12 @@ grep -F "login bootstrap content type changed" /config/home-assistant.log* 2>/de
 ```
 
 문제가 계속되면 공개 이슈에는 비밀번호, 쿠키, 토큰, 원본 고객번호, 계약번호, HAR, raw capture를 올리지 마세요. 공유 가능한 자료는 검토 후 민감값을 지운 로그와 `login-schema.safe.json`뿐입니다.
+
+## 주택용 청구 상세
+
+주택용 직접계약은 월별 이력과 같은 청구월의 상세 응답을 결합합니다. 상세에 값이 있으면 전기요금 항목, 검침지침·검침일, 전월·전년동월 사용량과 기존 CO₂ 추정 센서에 반영합니다. 이웃 비교와 세대·공용 사용량 등 주택 응답에 없는 값은 채우지 않습니다.
+
+상세 조회가 실패해도 월별 이력과 청구액은 유지하며, 주택용 센서의 `house_detail_status`에서 `ok`, `connection_error`, `rate_limited`, `invalid_response`를 확인할 수 있습니다. 인증 만료는 재인증 흐름으로 전달됩니다. 과거월 조회에는 현재 검침기간의 사용량을 붙이지 않습니다.
 
 ## Power Planner 상태 확인
 

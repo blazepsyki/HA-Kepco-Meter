@@ -78,7 +78,8 @@ git diff --check
 | 계정 유형 | POST `/isCorp` | `userClNm: "INDI"`만 지원 |
 | 고객 목록 | POST `/my/indi/info/myPageCustNoList` | `dma_search`. 고객·세대 계약번호와 계약변경일 조회 |
 | 아파트 청구 | POST `/my/charge/pay/aptBillDetail` | `custNo`, `housCntrNo`, `yymm`, `yyyymm`, `searchType: "DETAIL"` |
-| 주택 청구 이력 | POST `/my/memo/mainChart` | `SI_CUST_NO`를 `custNo`로 사용. `months: "13"`, 계약변경일의 앞 6자리 |
+| 주택 청구 이력 | POST `/my/memo/mainChart` | `SI_CUST_NO`를 `custNo`로 사용. `months: "24"`, 계약변경일의 앞 6자리 |
+| 주택 청구 상세 | POST `/my/charge/view/` | 이력에서 선택한 월의 `schYm`, 고객번호, 전체 계약변경일 |
 | Power Planner | POST `/my/memo/powerPlanner` | 계약 유형별 고객·계약 식별자와 사용량 필드 조회 |
 
 JSON 요청은 `Content-Type: application/json; charset=UTF-8`를 사용하고 인증된 요청에 `refreshToken` 헤더를 보냅니다. 화면에 대응하는 `submissionid`도 전달합니다. API별 요청 필드는 `api.py`에서 관리합니다. 통합에서 호출하지 않는 first-login, SSO, 보조 고객 목록 경로는 허용 목록에 두지 않습니다. 로그인 스키마 도구는 조사 목적으로 이들 인증 경로 일부를 관찰할 수 있습니다.
@@ -87,9 +88,15 @@ JSON 요청은 `Content-Type: application/json; charset=UTF-8`를 사용하고 �
 
 공개 화면 정의의 참고 경로는 `/ui/me/login/indi/MEM001D01.xml`, `/ui/my/indi/MYM001D00.xml`, `/ui/my/charge/MYM053D50.xml`입니다. 이 경로와 서버 동작은 변경될 수 있습니다. 저장소의 구현·회귀 검증과 실제 계정의 동작 확인을 구분합니다.
 
-## 주택 청구 이력과 값 보존
+## 주택 청구 상세와 값 보존
 
-`mainChart`의 `dlt_chart`에서 월별 `jojYmFilter`, `kwh`, `afterMny`, `gigan`을 읽습니다. 최신 월을 선택하고, 같은 응답의 13개월 이력에 있는 전월·전년동월 사용량을 비교값으로 사용합니다. 이력에 해당 월이 없으면 값은 `unknown`입니다. 과거월 조회에는 현재 검침기간의 Power Planner 값을 붙이지 않습니다.
+`mainChart`의 `dlt_chart`에서 월별 `jojYmFilter`, `kwh`, `afterMny`, `gigan`을 읽습니다. 최신 월 또는 요청한 월을 선택하고, 이력에 존재하는 전월·전년동월 사용량을 비교값으로 사용합니다. 요청한 월이 없으면 다른 월을 대신 반환하지 않습니다.
+
+상세 조회는 `rsMsg.statusCode == "S"`와 `dma_charge`의 `yy`·`mm`가 선택한 청구월과 일치하는지 확인합니다. `kwh`, `befKwh`, `lastYearKwh`, 검침지침, 검침일, 기간 및 `dlt_mny`의 요금 항목을 기존 모델에 연결합니다. 알려진 요금 제목의 별칭은 허용하고 같은 항목에 서로 다른 값이 나오면 거부합니다. 누락 요금은 계산하거나 0으로 채우지 않습니다.
+
+기간이 연도 없는 짧은 표시값이면 이력의 기간을 유지합니다. 검침지침의 소수점 이하는 주택 청구 화면과 같이 버립니다. 상세에서 청구액이나 사용량을 받으면 같은 월의 이력도 함께 갱신합니다. 단위가 검증되지 않은 값으로 다른 센서를 대신 채우지 않습니다.
+
+상세 조회의 연결·제한·형식 오류는 이력을 유지하고 `house_detail_status`에 기록합니다. 인증 오류와 취소는 상위 흐름에 전달합니다. 과거월 조회에는 현재 검침기간의 Power Planner 값을 붙이지 않습니다.
 
 ## Power Planner 계약별 처리
 

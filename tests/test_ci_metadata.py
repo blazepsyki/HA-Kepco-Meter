@@ -23,6 +23,7 @@ ALLOWED_FIXTURES = {
     "bill_202607.json",
     "house_customer_list.json",
     "house_main_chart.json",
+    "house_bill_detail.json",
     "house_power_planner.json",
     "bill_latest.json",
     "customer_list_multiple.json",
