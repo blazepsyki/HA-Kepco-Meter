@@ -825,6 +825,11 @@ def test_entity_translations_have_json_parity_and_requested_korean_names() -> No
         "current_month_co2",
         "previous_month_co2",
         "last_year_same_month_co2",
+        "power_planner_today_usage",
+        "power_planner_yesterday_usage",
+        "power_planner_recent_interval_usage",
+        "power_planner_current_amount",
+        "power_planner_predicted_amount",
     }
 
     assert english["entity"] == strings["entity"]
@@ -860,6 +865,11 @@ def test_entity_translations_have_json_parity_and_requested_korean_names() -> No
         "current_month_co2": {"name": "당월 배출량"},
         "previous_month_co2": {"name": "전월 배출량"},
         "last_year_same_month_co2": {"name": "전년동월 배출량"},
+        "power_planner_today_usage": {"name": "오늘 사용량"},
+        "power_planner_yesterday_usage": {"name": "어제 사용량"},
+        "power_planner_recent_interval_usage": {"name": "최근 수집 구간 사용량"},
+        "power_planner_current_amount": {"name": "현재 검침기간 요금"},
+        "power_planner_predicted_amount": {"name": "현재 검침기간 예상 요금"},
     }
     for language in (strings, english, korean):
         for key in expected_keys:

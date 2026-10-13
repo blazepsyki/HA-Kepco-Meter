@@ -294,11 +294,13 @@ class KepcoOnClient:
         auth: KepcoAuthProvider,
         *,
         clock: ClockCallback = dt_util.now,
+        planner_excluded_customer_keys: frozenset[str] = frozenset(),
     ) -> None:
         self._auth = auth
         self._clock = clock
         # Rows skipped by the last customer-list parse; counts only, never row values.
         self.customer_row_skips = CustomerRowSkips()
+        self._planner_excluded_customer_keys = planner_excluded_customer_keys
 
     async def async_get_account_type(self) -> str:
         """Return the account type if it is a supported individual account."""
@@ -360,7 +362,10 @@ class KepcoOnClient:
         )
         bill = parse_bill(payload, requested_month)
         # Current-period data must never be attached to an explicit historical bill.
-        if requested_month is not None:
+        if (
+            requested_month is not None
+            or customer.stable_key in self._planner_excluded_customer_keys
+        ):
             return bill
         return await self._async_with_power_planner(bill, customer)
 
@@ -413,7 +418,10 @@ class KepcoOnClient:
             bill = dataclasses.replace(bill, house_detail_status="connection_error")
         except KepcoOnProtocolError:
             bill = dataclasses.replace(bill, house_detail_status="invalid_response")
-        if requested_month is not None:
+        if (
+            requested_month is not None
+            or customer.stable_key in self._planner_excluded_customer_keys
+        ):
             return bill
         return await self._async_with_power_planner(bill, customer)
 

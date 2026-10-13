@@ -201,6 +201,41 @@ class KepcoCoordinatorData:
         object.__setattr__(self, "last_success", last_success.astimezone(UTC))
 
 
+@dataclass(frozen=True, slots=True)
+class PowerPlannerSnapshot:
+    """One verified planner contract, independent of a historical bill."""
+
+    status: str = "not_requested"
+    period_start: date | None = None
+    period_end: date | None = None
+    reference_date: date | None = None
+    calendar_date: date | None = None
+    current_usage_kwh: float | None = None
+    predicted_usage_kwh: float | None = None
+    current_amount_krw: float | None = None
+    predicted_amount_krw: float | None = None
+    today_usage_kwh: float | None = None
+    yesterday_usage_kwh: float | None = None
+    recent_interval_usage_kwh: float | None = None
+    interval_minutes: int | None = None
+    today_valid_intervals: int = 0
+    yesterday_valid_intervals: int = 0
+    field_statuses: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "field_statuses", MappingProxyType(dict(self.field_statuses)))
+
+
+@dataclass(frozen=True, slots=True)
+class PowerPlannerData:
+    """Planner snapshots indexed by the existing private-safe customer key."""
+
+    snapshots: Mapping[str, PowerPlannerSnapshot] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "snapshots", MappingProxyType(dict(self.snapshots)))
+
+
 def serialize_customer(customer: KepcoCustomer) -> dict[str, Any]:
     """Serialize one selected customer for config-entry storage."""
     return {
@@ -301,6 +336,8 @@ __all__ = [
     "KepcoCoordinatorData",
     "KepcoCustomer",
     "KepcoUsageHistoryPoint",
+    "PowerPlannerData",
+    "PowerPlannerSnapshot",
     "customer_location_name",
     "deserialize_customer",
     "selected_customer_location_title",

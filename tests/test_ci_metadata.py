@@ -28,6 +28,7 @@ ALLOWED_FIXTURES = {
     "bill_latest.json",
     "customer_list_multiple.json",
     "customer_list_single.json",
+    "planner_smartview.json",
 }
 
 SENSITIVE_FILE_SUFFIXES = (".har", ".jsonl", ".trace.zip")
