@@ -25,8 +25,10 @@ from custom_components.kepco_on.const import (
     OPT_CO2_FACTOR_KG_PER_KWH,
     OPT_ENABLE_CO2_ESTIMATE,
     OPT_ENABLE_DETAILED_SENSORS,
+    OPT_ENABLE_POWER_PLANNER,
     OPT_HISTORY_MONTHS,
     OPT_POLLING_INTERVAL_HOURS,
+    OPT_POWER_PLANNER_CUSTOMER_ID,
     PLATFORMS,
 )
 from custom_components.kepco_on.exceptions import (
@@ -781,6 +783,8 @@ async def test_setup_reports_and_clears_safe_repair_issues(
         (entry.entry_id, "customer_schema_changed"),
         (entry.entry_id, "unsupported_account"),
         (entry.entry_id, "session_restore_failed"),
+        (entry.entry_id, "power_planner_auth_required"),
+        (entry.entry_id, "power_planner_unavailable"),
     ]
 
 
@@ -1442,3 +1446,81 @@ async def test_real_coordinator_timer_recovers_without_manual_refresh(
     finally:
         remove_listener()
         await coordinator.async_shutdown()
+
+
+@pytest.mark.parametrize("forward_failure", [False, True])
+async def test_planner_lifecycle_owns_both_sessions_and_binds_one_customer(
+    reset_fakes: list[FakeSession], monkeypatch: pytest.MonkeyPatch, forward_failure: bool
+) -> None:
+    from types import SimpleNamespace
+
+    import custom_components.kepco_on as integration
+
+    excluded: list[frozenset[str]] = []
+    planner_customers: list[tuple[KepcoCustomer, ...]] = []
+
+    class Client(FakeClient):
+        def __init__(
+            self,
+            auth: FakeAuth,
+            *,
+            clock: Callable[[], datetime],
+            planner_excluded_customer_keys: frozenset[str],
+        ) -> None:
+            super().__init__(auth, clock=clock)
+            excluded.append(planner_excluded_customer_keys)
+
+    async def refresh() -> None:
+        return None
+
+    def make_planner(
+        hass: Any,
+        entry: Any,
+        client: Any,
+        customers: tuple[KepcoCustomer, ...],
+        password: str | None,
+    ) -> Any:
+        planner_customers.append(customers)
+        assert password is None
+        return SimpleNamespace(async_refresh=refresh)
+
+    monkeypatch.setattr(integration, "KepcoOnClient", Client)
+    monkeypatch.setattr(integration, "PowerPlannerCoordinator", make_planner)
+    monkeypatch.setattr(integration, "PowerPlannerSessionStore", FakeStore)
+    hass = FakeHass()
+    entry = make_entry(
+        with_handoff=True,
+        customers=(customer("key-1"), customer("key-2")),
+        selected=["key-1", "key-2"],
+        options={OPT_ENABLE_POWER_PLANNER: True, OPT_POWER_PLANNER_CUSTOMER_ID: "key-1"},
+    )
+    if forward_failure:
+
+        async def fail_forward(*args: Any) -> None:
+            raise RuntimeError("synthetic failure")
+
+        monkeypatch.setattr(hass.config_entries, "async_forward_entry_setups", fail_forward)
+        with pytest.raises(ConfigEntryError):
+            await integration.async_setup_entry(cast("Any", hass), cast("Any", entry))
+        assert entry.runtime_data is None
+        assert all(session.closed for session in reset_fakes)
+    else:
+        assert await integration.async_setup_entry(cast("Any", hass), cast("Any", entry))
+        assert len(reset_fakes) == 2
+        assert not reset_fakes[1].cookie_jar.quote_cookie
+        assert entry.runtime_data.power_planner is not None
+        assert await integration.async_unload_entry(cast("Any", hass), cast("Any", entry))
+        assert all(session.closed for session in reset_fakes)
+    assert excluded == [frozenset({"key-1"})]
+    assert [item.stable_key for item in planner_customers[0]] == ["key-1"]
+
+
+async def test_remove_entry_removes_both_provider_stores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import custom_components.kepco_on as integration
+
+    monkeypatch.setattr(integration, "PowerPlannerSessionStore", FakeStore)
+    await integration.async_remove_entry(cast("Any", FakeHass()), cast("Any", make_entry()))
+    assert len(FakeStore.instances) == 2
+    assert all(store.cleared for store in FakeStore.instances)

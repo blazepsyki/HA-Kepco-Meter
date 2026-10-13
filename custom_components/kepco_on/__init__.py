@@ -24,6 +24,8 @@ from .const import (
     CONFIG_ENTRY_VERSION,
     OPT_ENABLE_CO2_ESTIMATE,
     OPT_ENABLE_DETAILED_SENSORS,
+    OPT_ENABLE_POWER_PLANNER,
+    OPT_POWER_PLANNER_CUSTOMER_ID,
     PLATFORMS,
 )
 from .coordinator import KepcoOnDataUpdateCoordinator
@@ -37,6 +39,8 @@ from .exceptions import (
     KepcoOnUnsupportedAccount,
 )
 from .models import selected_customer_location_title, strict_selected_stored_customers
+from .power_planner import PowerPlannerClient, PowerPlannerSessionStore
+from .power_planner_coordinator import PowerPlannerCoordinator
 from .repairs import async_clear_issue, async_create_issue
 from .services import async_setup_services
 from .session_store import KepcoOnSessionStore, session_from_payload
@@ -53,6 +57,8 @@ class KepcoOnRuntimeData:
     coordinator: KepcoOnDataUpdateCoordinator
     session_store: KepcoOnSessionStore
     session: ClientSession
+    power_planner: PowerPlannerCoordinator | None = None
+    planner_session: ClientSession | None = None
 
 
 type KepcoOnConfigEntry = ConfigEntry[KepcoOnRuntimeData]
@@ -246,6 +252,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KepcoOnConfigEntry) -> b
         auto_cleanup=False,
         cookie_jar=CookieJar(),
     )
+    planner_session: ClientSession | None = None
     setup_error: Exception | None = None
     runtime_assigned = False
     setup_phase = "session_handoff"
@@ -260,7 +267,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: KepcoOnConfigEntry) -> b
             reauth_password=str(entry.data[CONF_PASSWORD]) if _has_saved_password(entry) else None,
         )
         await _ensure_authenticated(hass, auth, entry)
-        client = KepcoOnClient(auth, clock=dt_util.now)
+        enabled = bool(entry.options.get(OPT_ENABLE_POWER_PLANNER, False))
+        planner_key = entry.options.get(OPT_POWER_PLANNER_CUSTOMER_ID)
+        client = (
+            KepcoOnClient(
+                auth,
+                clock=dt_util.now,
+                planner_excluded_customer_keys=frozenset({planner_key})
+                if isinstance(planner_key, str)
+                else frozenset(),
+            )
+            if enabled
+            else KepcoOnClient(auth, clock=dt_util.now)
+        )
         setup_phase = "account"
         await _ensure_supported_account(hass, auth, client, entry)
         setup_phase = "customers"
@@ -275,6 +294,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: KepcoOnConfigEntry) -> b
         )
         setup_phase = "first_refresh"
         await coordinator.async_config_entry_first_refresh()
+        if enabled:
+            planner_session = async_create_clientsession(
+                hass, auto_cleanup=False, cookie_jar=CookieJar(quote_cookie=False)
+            )
+            planner = PowerPlannerClient(
+                planner_session, PowerPlannerSessionStore(hass, entry.entry_id)
+            )
+            runtime_data.power_planner = PowerPlannerCoordinator(
+                hass,
+                entry,
+                planner,
+                tuple(customer for customer in customers if customer.stable_key == planner_key),
+                str(entry.data[CONF_PASSWORD]) if _has_saved_password(entry) else None,
+            )
+            runtime_data.planner_session = planner_session
+            await runtime_data.power_planner.async_refresh()
         entry.runtime_data = runtime_data
         runtime_assigned = True
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -297,6 +332,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: KepcoOnConfigEntry) -> b
         if runtime_assigned:
             _clear_runtime_data(entry)
         await _close_session(client_session)
+        if planner_session is not None:
+            await _close_session(planner_session)
         mapped = _map_setup_error(setup_error)
         if mapped is setup_error:
             raise mapped
@@ -312,6 +349,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: KepcoOnConfigEntry) -> b
     ):
         async_clear_issue(hass, entry, kind)
 
+    if not enabled:
+        async_clear_issue(hass, entry, "power_planner_auth_required")
+        async_clear_issue(hass, entry, "power_planner_unavailable")
+
     return True
 
 
@@ -320,6 +361,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: KepcoOnConfigEntry) -> 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         await _close_session(entry.runtime_data.session)
+        planner_session = getattr(entry.runtime_data, "planner_session", None)
+        if planner_session is not None:
+            await _close_session(planner_session)
         _clear_runtime_data(entry)
     return unload_ok
 
@@ -337,6 +381,14 @@ async def async_remove_config_entry_device(
     from .sensor import async_remove_config_entry_device as async_remove_stale_device
 
     return await async_remove_stale_device(hass, config_entry, device_entry)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove both provider stores when their owning entry is removed."""
+    await KepcoOnSessionStore(hass, entry.entry_id).async_clear()
+    await PowerPlannerSessionStore(hass, entry.entry_id).async_clear()
+    for kind in ("power_planner_auth_required", "power_planner_unavailable"):
+        async_clear_issue(hass, entry, kind)
 
 
 __all__ = [

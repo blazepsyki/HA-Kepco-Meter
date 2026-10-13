@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
@@ -32,11 +32,14 @@ from .const import (
     DEFAULT_CO2_FACTOR_KG_PER_KWH,
     DOMAIN,
     OPT_CO2_FACTOR_KG_PER_KWH,
+    OPT_ENABLE_POWER_PLANNER,
+    OPT_POWER_PLANNER_CUSTOMER_ID,
     PAGE_URL,
     VERSION,
 )
 from .coordinator import KepcoOnDataUpdateCoordinator
-from .models import KepcoBill, KepcoCustomer
+from .models import KepcoBill, KepcoCustomer, PowerPlannerData, PowerPlannerSnapshot
+from .power_planner_coordinator import PowerPlannerCoordinator
 
 KepcoSensorValue = str | int | float | date | None
 KepcoSensorAttributes = dict[str, str | date | int | None]
@@ -505,9 +508,45 @@ SENSOR_DESCRIPTIONS = (
     *GREENHOUSE_GAS_SENSOR_DESCRIPTIONS,
 )
 ACTIVE_SENSOR_KEYS = frozenset(description.key for description in SENSOR_DESCRIPTIONS)
+
+
+@dataclass(frozen=True, kw_only=True)
+class PowerPlannerSensorDescription(SensorEntityDescription):
+    """Describe a quantity in the verified planner snapshot."""
+
+    device_group: KepcoDeviceGroup
+    field_name: str
+    source_field: str
+
+
+PLANNER_DESCRIPTIONS = tuple(
+    PowerPlannerSensorDescription(
+        key=key,
+        translation_key=key,
+        field_name=field_name,
+        source_field=source_field,
+        device_group=KepcoDeviceGroup.ELECTRICITY_CHARGE
+        if monetary
+        else KepcoDeviceGroup.USAGE,
+        native_unit_of_measurement="KRW" if monetary else UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.MONETARY if monetary else SensorDeviceClass.ENERGY,
+        suggested_display_precision=0 if monetary else 2,
+    )
+    for key, field_name, source_field, monetary in (
+        ("current_period_usage", "current_usage_kwh", "F_AP_QT", False),
+        ("predicted_period_usage", "predicted_usage_kwh", "PREDICT_TOT", False),
+        ("power_planner_today_usage", "today_usage_kwh", "F_AP_QT", False),
+        ("power_planner_yesterday_usage", "yesterday_usage_kwh", "F_AP_QT", False),
+        ("power_planner_recent_interval_usage", "recent_interval_usage_kwh", "F_AP_QT", False),
+        ("power_planner_current_amount", "current_amount_krw", "TOTAL_CHARGE", True),
+        ("power_planner_predicted_amount", "predicted_amount_krw", "PREDICT_TOTAL_CHARGE", True),
+    )
+)
+PLANNER_KEYS = frozenset(description.key for description in PLANNER_DESCRIPTIONS)
+PLANNER_NEW_KEYS = PLANNER_KEYS - POWER_PLANNER_FIELDS.keys()
 REMOVED_SENSOR_KEYS = frozenset({"billing_month"})
 KNOWN_SENSOR_KEYS = tuple(
-    sorted((*ACTIVE_SENSOR_KEYS, *REMOVED_SENSOR_KEYS), key=len, reverse=True)
+    sorted(ACTIVE_SENSOR_KEYS | PLANNER_KEYS | REMOVED_SENSOR_KEYS, key=len, reverse=True)
 )
 
 
@@ -545,12 +584,24 @@ async def async_setup_entry(
     customers = coordinator.data.customers
     await _async_remove_stale_registry_entries(hass, entry, customers)
     options = dict(entry.options)
+    planner = getattr(entry.runtime_data, "power_planner", None)
+    planner_key = options.get(OPT_POWER_PLANNER_CUSTOMER_ID)
 
-    entities = [
+    entities: list[KepcoOnSensor | PowerPlannerSensor] = [
         KepcoOnSensor(coordinator, customer, description, options)
         for customer in customers
         for description in SENSOR_DESCRIPTIONS
+        if planner is None
+        or customer.stable_key != planner_key
+        or description.key not in POWER_PLANNER_FIELDS
     ]
+    if planner is not None:
+        entities.extend(
+            PowerPlannerSensor(planner, customer, description)
+            for customer in customers
+            if customer.stable_key == planner_key
+            for description in PLANNER_DESCRIPTIONS
+        )
     _async_migrate_device_groups(hass, entry, entities)
     async_add_entities(entities)
 
@@ -585,7 +636,7 @@ def _async_group_device(
 def _async_migrate_device_groups(
     hass: HomeAssistant,
     entry: KepcoOnConfigEntry,
-    entities: list[KepcoOnSensor],
+    entities: list[KepcoOnSensor | PowerPlannerSensor],
 ) -> None:
     """Move existing sensors without replacing IDs or user registry settings."""
     entity_registry = er.async_get(hass)
@@ -647,6 +698,81 @@ def _async_migrate_device_groups(
             and not er.async_entries_for_device(entity_registry, device.id)
         ):
             device_registry.async_remove_device(device.id)
+
+
+class PowerPlannerSensor(CoordinatorEntity[PowerPlannerCoordinator], SensorEntity):
+    """Publish optional planner status without tying it to bill availability."""
+
+    _attr_has_entity_name = True
+    entity_description: PowerPlannerSensorDescription
+
+    def __init__(
+        self,
+        coordinator: PowerPlannerCoordinator,
+        customer: KepcoCustomer,
+        description: PowerPlannerSensorDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self.customer = customer
+        self.entity_description = description
+        self._attr_unique_id = f"{customer.stable_key}_{description.key}"
+        self._attr_device_info = _device_info(customer, description.device_group)
+
+    def _snapshot(self) -> PowerPlannerSnapshot:
+        data = getattr(self.coordinator, "data", None)
+        if not isinstance(data, PowerPlannerData):
+            return PowerPlannerSnapshot(status="no_data")
+        return data.snapshots.get(
+            self.customer.stable_key, PowerPlannerSnapshot(status="unsupported_customer")
+        )
+
+    @property
+    def available(self) -> bool:
+        """Keep missing values unknown so their safe status remains visible."""
+        return True
+
+    @property
+    def native_value(self) -> float | None:
+        snapshot = self._snapshot()
+        if snapshot.status != "ok" or not self.coordinator.last_update_success:
+            return None
+        value: float | None = getattr(snapshot, self.entity_description.field_name)
+        return value
+
+    @property
+    def extra_state_attributes(self) -> KepcoSensorAttributes:
+        snapshot = self._snapshot()
+        name = self.entity_description.field_name
+        status = snapshot.field_statuses.get(name, snapshot.status)
+        if not self.coordinator.last_update_success:
+            status = "connection_error"
+        attributes: KepcoSensorAttributes = {
+            "data_source": "kepco_power_planner_site",
+            "source_field": self.entity_description.source_field,
+            "data_status": status,
+            "integration_version": VERSION,
+            "value_divisor": 1,
+            "conversion_basis": "provider_kwh" if "kwh" in name else "provider_krw",
+            "request_variant": "main_customer_hourly",
+            "interval_minutes": snapshot.interval_minutes,
+        }
+        if name in {"today_usage_kwh", "yesterday_usage_kwh", "recent_interval_usage_kwh"}:
+            calendar_date = snapshot.calendar_date
+            if calendar_date is not None and name == "yesterday_usage_kwh":
+                calendar_date -= timedelta(days=1)
+            attributes["calendar_date"] = calendar_date
+            attributes["valid_intervals"] = (
+                snapshot.yesterday_valid_intervals
+                if name == "yesterday_usage_kwh"
+                else snapshot.today_valid_intervals
+            )
+        else:
+            attributes.update(
+                usage_period_start=snapshot.period_start,
+                usage_period_end=snapshot.period_end,
+                reference_date=snapshot.reference_date,
+            )
+        return attributes
 
 
 class KepcoOnSensor(CoordinatorEntity[KepcoOnDataUpdateCoordinator], SensorEntity):
@@ -796,6 +922,8 @@ async def _async_remove_stale_registry_entries(
     """Remove stale entries and migrate integration-disabled legacy entities."""
     selected_customers = {customer.stable_key: customer for customer in customers}
     selected_keys = set(selected_customers)
+    enabled = bool(entry.options.get(OPT_ENABLE_POWER_PLANNER, False))
+    planner_key = entry.options.get(OPT_POWER_PLANNER_CUSTOMER_ID)
     entity_registry = er.async_get(hass)
     for registry_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
         if not _is_this_entry_domain_entity(registry_entry, entry.entry_id):
@@ -814,8 +942,14 @@ async def _async_remove_stale_registry_entries(
                     registry_entry.entity_id, disabled_by=RegistryEntryDisabler.INTEGRATION
                 )
             continue
+        if sensor_key in PLANNER_NEW_KEYS and (not enabled or customer_key != planner_key):
+            if registry_entry.disabled_by is None:
+                entity_registry.async_update_entity(
+                    registry_entry.entity_id, disabled_by=RegistryEntryDisabler.INTEGRATION
+                )
+            continue
         if (
-            sensor_key in ACTIVE_SENSOR_KEYS
+            sensor_key in ACTIVE_SENSOR_KEYS | PLANNER_KEYS
             and registry_entry.disabled_by == RegistryEntryDisabler.INTEGRATION
         ):
             entity_registry.async_update_entity(registry_entry.entity_id, disabled_by=None)

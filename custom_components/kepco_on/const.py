@@ -55,6 +55,8 @@ OPT_ENABLE_DETAILED_SENSORS = "enable_detailed_sensors"
 OPT_ENABLE_CO2_ESTIMATE = "enable_co2_estimate"
 OPT_CO2_FACTOR_KG_PER_KWH = "co2_factor_kg_per_kwh"
 OPT_HISTORY_MONTHS = "history_months"
+OPT_ENABLE_POWER_PLANNER = "enable_power_planner"
+OPT_POWER_PLANNER_CUSTOMER_ID = "power_planner_customer_id"
 
 # Only the two KEPCO ON authentication-session cookies are persisted. The
 # session store still restricts them to KEPCO domains, valid paths and expiry.
@@ -102,8 +104,10 @@ __all__ = [
     "OPT_CO2_FACTOR_KG_PER_KWH",
     "OPT_ENABLE_CO2_ESTIMATE",
     "OPT_ENABLE_DETAILED_SENSORS",
+    "OPT_ENABLE_POWER_PLANNER",
     "OPT_HISTORY_MONTHS",
     "OPT_POLLING_INTERVAL_HOURS",
+    "OPT_POWER_PLANNER_CUSTOMER_ID",
     "PAGE_URL",
     "PERSISTED_COOKIE_ALLOWLIST",
     "PLATFORMS",

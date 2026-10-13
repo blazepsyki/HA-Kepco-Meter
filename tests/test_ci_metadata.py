@@ -49,6 +49,7 @@ ALLOWED_FIXTURES = {
     "customer_list_single.json",
     "session_check_success.json",
     "sso_check_success.json",
+    "planner_smartview.json",
 }
 SENSITIVE_FILE_SUFFIXES = (".har", ".jsonl", ".trace.zip")
 SENSITIVE_FILE_NAMES = {"secrets.yaml"}
