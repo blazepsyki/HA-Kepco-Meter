@@ -76,12 +76,16 @@
         "data": {
           "polling_interval_hours": "Polling interval",
           "co2_factor_kg_per_kwh": "CO2 factor (kg/kWh)",
-          "history_months": "History months"
+          "history_months": "History months",
+          "enable_power_planner": "Use Power Planner",
+          "password": "Password for Power Planner sign-in"
         },
         "data_description": {
           "polling_interval_hours": "Hours between KEPCO ON updates.",
           "co2_factor_kg_per_kwh": "Positive decimal factor up to 10 used for all three emission sensors.",
-          "history_months": "Number of months returned by the usage-history action."
+          "history_months": "Number of months returned by the usage-history action.",
+          "enable_power_planner": "Use Power Planner for current and predicted usage, daily usage and costs. Supports the main customer with hourly metering.",
+          "password": "Password for the existing KEPCO ON account. This field is never saved in options. Leave blank when a saved password or valid session is available."
         }
       }
     },
@@ -89,7 +93,14 @@
       "invalid_selection": "Select at least one valid customer.",
       "invalid_co2_factor": "CO2 factor must be greater than 0 and no more than 10.",
       "invalid_history_months": "History months must be from 1 to 24.",
-      "unknown": "Unexpected error."
+      "unknown": "Unexpected error.",
+      "invalid_auth": "Power Planner authentication failed.",
+      "cannot_connect": "Could not connect to Power Planner.",
+      "rate_limited": "Power Planner rate-limited the request. Try later.",
+      "unsupported_account": "This contract does not support the verified hourly profile.",
+      "no_customers": "The Power Planner main customer does not match a selected household contract.",
+      "protocol_changed": "Power Planner returned an unexpected response.",
+      "power_planner_password_required": "Enter the password to sign in to Power Planner."
     }
   },
   "services": {
@@ -164,6 +175,14 @@
     "session_restore_failed": {
       "title": "KEPCO ON session restore failed",
       "description": "The stored KEPCO ON session could not be restored. Reauthentication may be required."
+    },
+    "power_planner_auth_required": {
+      "title": "Power Planner sign-in required",
+      "description": "Open integration options, enter the same account password and save the Power Planner setting. KEPCO ON billing remains available."
+    },
+    "power_planner_unavailable": {
+      "title": "Power Planner unavailable",
+      "description": "Check data_status on planner sensors for unsupported profiles, customer mismatch, schema errors or temporary connection failures. Billing remains available."
     }
   },
   "entity": {
@@ -254,6 +273,21 @@
       },
       "predicted_period_usage": {
         "name": "KEPCO predicted usage"
+      },
+      "power_planner_today_usage": {
+        "name": "Today usage"
+      },
+      "power_planner_yesterday_usage": {
+        "name": "Yesterday usage"
+      },
+      "power_planner_recent_interval_usage": {
+        "name": "Latest collected interval usage"
+      },
+      "power_planner_current_amount": {
+        "name": "Current period cost"
+      },
+      "power_planner_predicted_amount": {
+        "name": "Predicted period cost"
       }
     }
   }

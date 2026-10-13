@@ -20,12 +20,16 @@ from .test_sensor import by_key, setup_entities
 KEYS = ("current_period_usage", "predicted_period_usage", "monthly_usage")
 
 
-async def publish(hass: HomeAssistant, entities: list[Any]) -> dict[str, Any]:
+async def publish(
+    hass: HomeAssistant, entities: list[Any], keys: tuple[str, ...] = KEYS
+) -> dict[str, Any]:
     """Add actual sensor entities to an HA entity platform and write initial state."""
     sensors = by_key(entities)
-    selected = [sensors[key] for key in KEYS]
-    for key, entity in zip(KEYS, selected, strict=True):
+    selected = [sensors[key] for key in keys]
+    for key, entity in zip(keys, selected, strict=True):
         entity.entity_id = f"sensor.kepco_publication_{key}"
+        # Device contracts are covered separately; this harness publishes states only.
+        entity._attr_device_info = None
     component = EntityComponent[SensorEntity](logging.getLogger(__name__), "sensor", hass)
     await component.async_add_entities(selected)
     await hass.async_block_till_done()
