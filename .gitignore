@@ -11,14 +11,9 @@ cookies*.json
 secrets.yaml
 .env
 .env.*
-__pycache__/
 *.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 .coverage
 htmlcov/
-.venv/
 node_modules/
 .worktrees/
 .local/
