@@ -211,6 +211,21 @@ class KepcoCoordinatorData:
 
 
 @dataclass(frozen=True, slots=True)
+class PowerPlannerSourceMetadata:
+    """Scope and freshness for one independent planner data source."""
+
+    period_kind: str
+    period_start: date | None = None
+    period_end: date | None = None
+    reference_date: date | None = None
+    fetched_at: datetime | None = None
+    comparison_date: date | None = None
+    comparison_period: str | None = None
+    comparison_scope: str | None = None
+    status: str = "not_requested"
+
+
+@dataclass(frozen=True, slots=True)
 class PowerPlannerSnapshot:
     """One verified planner contract, independent of a historical bill."""
 
@@ -226,6 +241,24 @@ class PowerPlannerSnapshot:
     today_usage_kwh: float | None = None
     yesterday_usage_kwh: float | None = None
     recent_interval_usage_kwh: float | None = None
+    today_max_interval_usage_kwh: float | None = None
+    today_min_interval_usage_kwh: float | None = None
+    today_average_interval_usage_kwh: float | None = None
+    data_coverage_ratio_pct: float | None = None
+    current_bill_level: int | None = None
+    predicted_bill_level: int | None = None
+    calendar_month_usage_kwh: float | None = None
+    calendar_year_usage_kwh: float | None = None
+    prior_year_same_day_usage_kwh: float | None = None
+    same_day_year_on_year_usage_difference_kwh: float | None = None
+    same_day_year_on_year_usage_ratio_pct: float | None = None
+    regional_average_usage_kwh: float | None = None
+    saving_neighbor_usage_kwh: float | None = None
+    regional_usage_percentile_pct: float | None = None
+    regional_average_amount_krw: float | None = None
+    saving_neighbor_amount_krw: float | None = None
+    regional_amount_percentile_pct: float | None = None
+    source_metadata: Mapping[str, PowerPlannerSourceMetadata] = field(default_factory=dict)
     interval_minutes: int | None = None
     today_valid_intervals: int = 0
     yesterday_valid_intervals: int = 0
@@ -233,6 +266,7 @@ class PowerPlannerSnapshot:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "field_statuses", MappingProxyType(dict(self.field_statuses)))
+        object.__setattr__(self, "source_metadata", MappingProxyType(dict(self.source_metadata)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,6 +382,7 @@ __all__ = [
     "KepcoUsageHistoryPoint",
     "PowerPlannerData",
     "PowerPlannerSnapshot",
+    "PowerPlannerSourceMetadata",
     "customer_location_name",
     "deserialize_customer",
     "selected_customer_location_title",

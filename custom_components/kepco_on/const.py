@@ -65,6 +65,30 @@ PERSISTED_COOKIE_ALLOWLIST: frozenset[str] = CANDIDATE_COOKIE_NAMES
 # Apartment-only comparisons that residential direct contracts never report.
 APARTMENT_NEIGHBOR_SENSOR_KEYS = frozenset({"building_average_usage", "apartment_average_usage"})
 
+POWER_PLANNER_SOURCE_KEYS: dict[str, frozenset[str]] = {
+    "tier": frozenset({"power_planner_current_bill_level"}),
+    "month": frozenset({"power_planner_calendar_month_usage"}),
+    "year": frozenset({"power_planner_calendar_year_usage"}),
+    "day_comparison": frozenset(
+        {
+            "power_planner_prior_year_same_day_usage",
+            "power_planner_same_day_year_on_year_usage_difference",
+            "power_planner_same_day_year_on_year_usage_ratio",
+        }
+    ),
+    "neighbors": frozenset(
+        {
+            "power_planner_regional_average_usage",
+            "power_planner_saving_neighbor_usage",
+            "power_planner_regional_usage_percentile",
+            "power_planner_regional_average_amount",
+            "power_planner_saving_neighbor_amount",
+            "power_planner_regional_amount_percentile",
+        }
+    ),
+}
+POWER_PLANNER_DEFAULT_SOURCES = frozenset({"tier", "month", "year"})
+
 __all__ = [
     "APARTMENT_NEIGHBOR_SENSOR_KEYS",
     "BASE_URL",
@@ -112,6 +136,8 @@ __all__ = [
     "PERSISTED_COOKIE_ALLOWLIST",
     "PLATFORMS",
     "POLLING_INTERVAL_HOURS",
+    "POWER_PLANNER_DEFAULT_SOURCES",
+    "POWER_PLANNER_SOURCE_KEYS",
     "SENSITIVE_CONFIG_DATA_KEYS",
     "VERSION",
 ]
