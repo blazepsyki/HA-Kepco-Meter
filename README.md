@@ -13,6 +13,8 @@
 
 # 한전ON Home Assistant 커스텀 통합
 
+이 포크의 `v0.4.1`은 주택용 상세 조회 수정사항을 HA에서 확인하기 위한 테스트 릴리스입니다. 설치와 확인 방법은 [포크 테스트 설치 문서](docs/FORK_TESTING.md)를 참고해 주세요. 원본 저장소는 `1bobby-git/HA-Kepco-Meter`입니다.
+
 한전ON 개인(`INDI`) 계정의 아파트 단일·종합계약 및 주택용 직접계약 전기요금 조회를 Home Assistant 센서와 응답 액션으로 가져오는 비공식 커스텀 통합입니다. 실시간 스마트미터가 아니라 한전ON 청구/검침 페이지에서 확인되는 월별 요금 데이터 기반입니다.
 
 Repository: https://github.com/1bobby-git/HA-Kepco-Meter
@@ -22,7 +24,7 @@ Repository: https://github.com/1bobby-git/HA-Kepco-Meter
 - 지원: 한전ON 개인 계정(`INDI`), 아파트 세대 단일·종합계약 및 주택용 직접계약 요금.
 - 미지원: 법인 계정, 전기공사업체 계정, 인증서 로그인, OACX 간편인증 자동화, CAPTCHA/MFA 우회, CO2 실측값. Power Planner 값은 실시간 스마트미터 값이 아닙니다.
 - 통신: `https://online.kepco.co.kr`의 고정된 한전ON 경로만 사용하며 TLS 검증을 끄지 않습니다.
-- 버전: `v0.4.0`. 선택 고객마다 5개 논리 기기와 34개 센서 엔티티를 생성합니다.
+- 버전: `v0.4.1`. 선택 고객마다 5개 논리 기기와 34개 센서 엔티티를 생성합니다.
 
 ## 설치
 

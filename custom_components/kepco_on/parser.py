@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from dataclasses import replace
 from datetime import date
 from hashlib import sha256
 
@@ -27,6 +28,23 @@ ASCII_INTEGER_PATTERN = re.compile(r"-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)")
 ASCII_DATE_PATTERN = re.compile(r"[0-9]{8}")
 ASCII_YEAR_MONTH_PATTERN = re.compile(r"[0-9]{6}")
 ASCII_DAY_OF_MONTH_PATTERN = re.compile(r"[0-9]{2}")
+HOUSE_CHARGE_FIELDS = {
+    "전기요금계": "subtotal_krw",
+    "기본요금": "base_krw",
+    "전력량요금": "energy_krw",
+    "기후환경요금": "climate_krw",
+    "연료비조정요금": "fuel_krw",
+    "연료비조정액": "fuel_krw",
+    "출산가구할인": "child_discount_krw",
+    "출산가구할인요금": "child_discount_krw",
+    "부가가치세": "vat_krw",
+    "부가세": "vat_krw",
+    "전력산업기반기금": "fund_krw",
+    "전력기금": "fund_krw",
+    "원단위절사": "rounding_krw",
+    "원단위절사액": "rounding_krw",
+    "청구금액": "amount_krw",
+}
 
 
 def parse_int(value: object, field_name: str) -> int | None:
@@ -151,7 +169,7 @@ def parse_customers(payload: dict[str, object], account_uid_hash: str) -> tuple[
     return tuple(customers)
 
 
-def parse_house_bill(payload: dict[str, object]) -> KepcoBill:
+def parse_house_bill(payload: dict[str, object], requested_month: str | None = None) -> KepcoBill:
     """Parse a 주택용 monthly billing history (mainChart) response into a bill."""
     raw_rows = payload.get("dlt_chart")
     if not isinstance(raw_rows, list) or not raw_rows:
@@ -179,17 +197,125 @@ def parse_house_bill(payload: dict[str, object]) -> KepcoBill:
     if len({month for month, _, _ in points}) != len(points):
         raise KepcoOnProtocolError("house bill history contains duplicate months")
 
-    latest_month, latest_point, latest_period = points[-1]
+    selected = next((point for point in points if point[0] == requested_month), None)
+    if requested_month is not None and selected is None:
+        raise KepcoOnProtocolError("requested house bill month is unavailable")
+    latest_month, latest_point, latest_period = selected or points[-1]
     period_start, period_end = _parse_house_period(latest_period)
+    month_index = int(latest_month[:4]) * 12 + int(latest_month[4:]) - 1
+    previous_usage: dict[int, int | None] = {
+        month_index - (int(month[:4]) * 12 + int(month[4:]) - 1): point.usage_kwh
+        for month, point, _ in points
+    }
     return KepcoBill(
         bill_month=latest_month,
         response_bill_month=latest_month,
         period_start=period_start,
         period_end=period_end,
         usage_kwh=latest_point.usage_kwh,
+        previous_usage_kwh=previous_usage.get(1),
+        last_year_usage_kwh=previous_usage.get(12),
         amount_krw=latest_point.amount_krw,
         history=tuple(point for _, point, _ in points),
     )
+
+
+def parse_house_bill_detail(payload: dict[str, object], bill: KepcoBill) -> KepcoBill:
+    """Merge same-month residential detail without inventing missing values."""
+    status = payload.get("rsMsg")
+    result = payload.get("dma_charge")
+    if not isinstance(status, dict) or status.get("statusCode") != "S":
+        raise KepcoOnProtocolError("house bill detail status is not successful")
+    if not isinstance(result, dict):
+        raise KepcoOnProtocolError("house bill detail is missing")
+    year, month = result.get("yy"), result.get("mm")
+    if not isinstance(year, str) or not isinstance(month, str):
+        raise KepcoOnProtocolError("house bill detail month is missing")
+    if parse_year_month(year + month.zfill(2), "house_detail_month") != bill.bill_month:
+        raise KepcoOnProtocolError("house bill detail month does not match history")
+
+    raw_charges = payload.get("dlt_mny")
+    if raw_charges is not None and not isinstance(raw_charges, list):
+        raise KepcoOnProtocolError("house bill charges must be a list")
+    charges: dict[str, int | None] = {}
+    for row in raw_charges or []:
+        if not isinstance(row, dict):
+            raise KepcoOnProtocolError("house bill charge row is invalid")
+        raw_title = row.get("mnyTitle")
+        if not isinstance(raw_title, str):
+            raise KepcoOnProtocolError("house bill charge title is invalid")
+        title = "".join(raw_title.split())
+        field = HOUSE_CHARGE_FIELDS.get(title)
+        if field is None:
+            continue
+        value = parse_int(row.get("mnyMny"), field)
+        if field in charges and charges[field] != value:
+            raise KepcoOnProtocolError("house bill charge field is ambiguous")
+        charges[field] = value
+
+    def usage(field: str, fallback: int | None) -> int | None:
+        value = parse_int(result.get(field), field)
+        return value if value is not None else fallback
+
+    amount = charges.pop("amount_krw", None)
+    amount = amount if amount is not None else bill.amount_krw
+    current_usage = usage("kwh", bill.usage_kwh)
+    return replace(
+        bill,
+        period_start=_parse_house_detail_date(result.get("fromMmdd")) or bill.period_start,
+        period_end=_parse_house_detail_date(result.get("toMmdd")) or bill.period_end,
+        usage_kwh=current_usage,
+        previous_usage_kwh=usage("befKwh", bill.previous_usage_kwh),
+        last_year_usage_kwh=usage("lastYearKwh", bill.last_year_usage_kwh),
+        current_meter_reading=_parse_house_reading(result.get("whmMtrAlw")),
+        previous_meter_reading=_parse_house_reading(result.get("bfrMtrAlw")),
+        meter_reading_day=_parse_house_reading_day(result.get("gumchmDd")),
+        amount_krw=amount,
+        history=tuple(
+            replace(point, usage_kwh=current_usage, amount_krw=amount)
+            if point.month == bill.bill_month
+            else point
+            for point in bill.history
+        ),
+        charge=KepcoChargeBreakdown(**charges),
+        house_detail_status="ok",
+    )
+
+
+def _parse_house_detail_date(value: object) -> date | None:
+    """Prefer complete dates; retain chart periods for shortened display dates."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise KepcoOnProtocolError("house bill date must be text")
+    normalized = value.strip().replace(".", "").replace("-", "")
+    if len(normalized) == 4 and normalized.isascii() and normalized.isdigit():
+        return None
+    return parse_date(normalized, "house_bill_date")
+
+
+def _parse_house_reading(value: object) -> int | None:
+    """Match the public residential view's truncation of meter readings."""
+    try:
+        reading = _parse_float(value, "house_meter_reading")
+    except OverflowError as err:
+        raise KepcoOnProtocolError("house meter reading is outside the numeric range") from err
+    if reading is None:
+        return None
+    if not math.isfinite(reading) or reading < 0:
+        raise KepcoOnProtocolError("house meter reading must be finite and nonnegative")
+    return int(reading)
+
+
+def _parse_house_reading_day(value: object) -> str | None:
+    """Accept the residential display's numeric or short day field."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        value = str(value)
+    if isinstance(value, str):
+        value = value.strip().zfill(2)
+    return parse_day_of_month(value, "house_meter_reading_day")
 
 
 def parse_power_planner_return_code(payload: dict[str, object]) -> str | None:
@@ -471,6 +597,7 @@ __all__ = [
     "parse_date",
     "parse_day_of_month",
     "parse_house_bill",
+    "parse_house_bill_detail",
     "parse_int",
     "parse_power_planner",
     "parse_power_planner_return_code",

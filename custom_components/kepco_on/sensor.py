@@ -654,6 +654,8 @@ class KepcoOnSensor(CoordinatorEntity[KepcoOnDataUpdateCoordinator], SensorEntit
             _shift_month(bill.bill_month, offset) if offset is not None else bill.bill_month
         )
         attributes: KepcoSensorAttributes = {"billing_month": billing_month}
+        if self.customer.is_house:
+            attributes["house_detail_status"] = bill.house_detail_status
         if offset is None:
             if bill.period_start is not None:
                 attributes["usage_period_start"] = bill.period_start

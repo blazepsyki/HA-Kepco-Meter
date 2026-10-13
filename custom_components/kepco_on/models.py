@@ -162,6 +162,7 @@ class KepcoBill:
     amount_krw: int | None = None
     charge: KepcoChargeBreakdown = field(default_factory=KepcoChargeBreakdown)
     history: tuple[KepcoUsageHistoryPoint, ...] = ()
+    house_detail_status: str = "not_requested"
     current_period_usage_kwh: float | None = None
     predicted_period_usage_kwh: float | None = None
     power_planner_status: str = "not_requested"

@@ -4,6 +4,7 @@
 .kepco-on-capture-profile/
 .kepco-on-login-profile/
 login-schema*.json
+sensor-reproduction*.json
 session*.json
 cookies*.json
 .storage/

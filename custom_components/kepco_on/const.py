@@ -4,7 +4,7 @@ from homeassistant.const import CONF_PASSWORD, Platform
 
 DOMAIN = "kepco_on"
 NAME = "KEPCO ON"
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 CONFIG_ENTRY_VERSION = 3
 # Scope the user-reported request and Wh conversion to the exact tested contract.
 COMBINED_APARTMENT_PLANNER_CONTRACT = "아파트(종합계약)"
@@ -21,6 +21,7 @@ ENDPOINT_MYPAGE_CUST_NO_LIST = "/my/indi/info/myPageCustNoList"
 ENDPOINT_CUST_NO_LIST = "/my/indi/info/custNoList"
 ENDPOINT_APT_BILL_DETAIL = "/my/charge/pay/aptBillDetail"
 ENDPOINT_MAIN_CHART = "/my/memo/mainChart"
+ENDPOINT_HOUSE_BILL_DETAIL = "/my/charge/view/"
 ENDPOINT_POWER_PLANNER = "/my/memo/powerPlanner"
 
 POLLING_INTERVAL_HOURS = (1, 3, 6, 12, 24)
