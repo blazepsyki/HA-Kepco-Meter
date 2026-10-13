@@ -1,0 +1,27 @@
+{
+  "rsMsg": {"statusCode": "S"},
+  "dma_charge": {
+    "yy": "2026",
+    "mm": "08",
+    "fromMmdd": "2026.07.09",
+    "toMmdd": "2026.08.08",
+    "whmMtrAlw": "12,345.00",
+    "bfrMtrAlw": "11,742.00",
+    "gumchmDd": "9",
+    "kwh": "603",
+    "befKwh": "457",
+    "lastYearKwh": "520"
+  },
+  "dlt_mny": [
+    {"mnyTitle": "기본요금", "mnyMny": "6,060"},
+    {"mnyTitle": "전력량요금", "mnyMny": "100,000"},
+    {"mnyTitle": "기후환경요금", "mnyMny": "5,427"},
+    {"mnyTitle": "연료비조정요금", "mnyMny": "3,015"},
+    {"mnyTitle": "출산가구할인", "mnyMny": "-10,000"},
+    {"mnyTitle": "전기요금계", "mnyMny": "104,502"},
+    {"mnyTitle": "부가가치세", "mnyMny": "10,450"},
+    {"mnyTitle": "전력산업기반기금", "mnyMny": "3,860"},
+    {"mnyTitle": "원단위절사", "mnyMny": "-2"},
+    {"mnyTitle": "청구금액", "mnyMny": "118,810"}
+  ]
+}

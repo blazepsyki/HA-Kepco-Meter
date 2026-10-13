@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Protocol, cast
@@ -17,14 +17,13 @@ from .const import (
     BASE_URL,
     COMBINED_APARTMENT_PLANNER_CONTRACT,
     ENDPOINT_APT_BILL_DETAIL,
-    ENDPOINT_CUST_NO_LIST,
+    ENDPOINT_HOUSE_BILL_DETAIL,
     ENDPOINT_IS_CORP,
     ENDPOINT_LOGIN_INDI,
     ENDPOINT_MAIN_CHART,
     ENDPOINT_MYPAGE_CUST_NO_LIST,
     ENDPOINT_POWER_PLANNER,
     ENDPOINT_SESSION_CHECK,
-    ENDPOINT_SSO_CHECK,
     PAGE_URL,
     VERSION,
 )
@@ -40,6 +39,7 @@ from .parser import (
     parse_bill,
     parse_customers,
     parse_house_bill,
+    parse_house_bill_detail,
     parse_power_planner_return_code,
     parse_power_planner_value,
     parse_year_month,
@@ -58,13 +58,12 @@ MAX_RETRY_AFTER_SECONDS = 30.0
 ALLOWED_PATHS = frozenset(
     {
         ENDPOINT_MAIN_CHART,
+        ENDPOINT_HOUSE_BILL_DETAIL,
         ENDPOINT_POWER_PLANNER,
         ENDPOINT_LOGIN_INDI,
         ENDPOINT_SESSION_CHECK,
-        ENDPOINT_SSO_CHECK,
         ENDPOINT_IS_CORP,
         ENDPOINT_MYPAGE_CUST_NO_LIST,
-        ENDPOINT_CUST_NO_LIST,
         ENDPOINT_APT_BILL_DETAIL,
     }
 )
@@ -336,9 +335,9 @@ class KepcoOnClient:
 
     async def async_get_bill(self, customer: KepcoCustomer, month: str | None = None) -> KepcoBill:
         """Return latest or requested-month bill detail for a customer."""
-        if customer.is_house:
-            return await self._async_get_house_bill(customer)
         requested_month = self._validated_month(month)
+        if customer.is_house:
+            return await self._async_get_house_bill(customer, requested_month)
         payload = await self._auth.async_protected_request(
             ENDPOINT_APT_BILL_DETAIL,
             {
@@ -358,11 +357,13 @@ class KepcoOnClient:
             return bill
         return await self._async_with_power_planner(bill, customer)
 
-    async def _async_get_house_bill(self, customer: KepcoCustomer) -> KepcoBill:
-        """Return 주택용 billing history (mainChart) + 파워플래너 현재/예측."""
+    async def _async_get_house_bill(
+        self, customer: KepcoCustomer, requested_month: str | None = None
+    ) -> KepcoBill:
+        """Combine residential chart history with matching bill detail."""
         chg_ym = customer.change_ymd[:6] if customer.change_ymd else ""
         search = {
-            "schYm": "",
+            "schYm": requested_month or "",
             "custNo": customer.customer_number,
             "gubun": "",
             "schChart": "12",
@@ -372,7 +373,7 @@ class KepcoOnClient:
             "searchType": "",
             "dong": "",
             "ho": "",
-            "months": "13",
+            "months": "24",
             "chgYmd": chg_ym,
         }
         payload = await self._auth.async_protected_request(
@@ -380,7 +381,33 @@ class KepcoOnClient:
             {"dma_search": search},
             submission_id="mf_wfm_layout_sbm_houseChart",
         )
-        bill = parse_house_bill(payload)
+        bill = parse_house_bill(payload, requested_month)
+        try:
+            detail = await self._auth.async_protected_request(
+                ENDPOINT_HOUSE_BILL_DETAIL,
+                {
+                    "dma_search": {
+                        "schYm": bill.bill_month,
+                        "custNo": customer.customer_number,
+                        "schChart": "12",
+                        "apKind": "",
+                        "userEmailAddr": "",
+                        "userMTel": "",
+                        "months": "24",
+                        "chgYmd": customer.change_ymd,
+                    }
+                },
+                submission_id="mf_wfm_layout_sbm_select",
+            )
+            bill = parse_house_bill_detail(detail, bill)
+        except KepcoOnRateLimitError:
+            bill = dataclasses.replace(bill, house_detail_status="rate_limited")
+        except KepcoOnConnectionError:
+            bill = dataclasses.replace(bill, house_detail_status="connection_error")
+        except KepcoOnProtocolError:
+            bill = dataclasses.replace(bill, house_detail_status="invalid_response")
+        if requested_month is not None:
+            return bill
         return await self._async_with_power_planner(bill, customer)
 
     async def _async_with_power_planner(
@@ -450,15 +477,6 @@ class KepcoOnClient:
             power_planner_current_status=statuses.get("F_AP_QT"),
             power_planner_prediction_status=statuses.get("PREDICT_TOT"),
         )
-
-    async def async_get_all_current_bills(
-        self, customers: Sequence[KepcoCustomer]
-    ) -> Mapping[str, KepcoBill]:
-        """Fetch current bills sequentially for all selected customers."""
-        bills: dict[str, KepcoBill] = {}
-        for customer in customers:
-            bills[customer.stable_key] = await self.async_get_bill(customer)
-        return bills
 
     def _validated_month(self, month: str | None) -> str | None:
         if month is None:

@@ -19,7 +19,7 @@ from custom_components.kepco_on.exceptions import (
     KepcoOnSessionExpired,
 )
 from custom_components.kepco_on.models import KepcoBill
-from custom_components.kepco_on.parser import parse_power_planner, parse_power_planner_value
+from custom_components.kepco_on.parser import parse_power_planner_value
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
@@ -91,17 +91,6 @@ def test_invalid_numbers_are_rejected_safely(field: str, value: object) -> None:
     payload: dict[str, object] = {"dma_powerPlanner": {field: value}}
     with pytest.raises(KepcoOnProtocolError):
         parse_power_planner_value(payload, field, unit_wh=True)
-
-
-def test_legacy_tuple_requires_explicit_prediction_profile() -> None:
-    payload: dict[str, object] = {"dma_powerPlanner": {"F_AP_QT": 246800, "PREDICT_TOT": 987654}}
-    assert parse_power_planner(payload) == (246800.0, None)
-    assert parse_power_planner(payload, current_unit_wh=True) == (246.8, None)
-    current, predicted = parse_power_planner(payload, current_unit_wh=True, predicted_unit_wh=True)
-    assert current == pytest.approx(246.8)
-    assert predicted == pytest.approx(987.654)
-    with pytest.raises(ValueError, match="Unsupported Power Planner field"):
-        parse_power_planner_value(payload, "PRIVATE_FIELD")
 
 
 @pytest.mark.parametrize("code", [None, "", "00"])

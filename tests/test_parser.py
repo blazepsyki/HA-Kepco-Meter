@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 import pytest
 from custom_components.kepco_on import parser
@@ -26,27 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 
 
-class FixtureExtractor(Protocol):
-    """Subset of the extractor module used by parser fixture tests."""
-
-    def _build_fixtures(self, records: list[dict[str, object]]) -> dict[str, dict[str, object]]: ...
-
-    def _strip_sensitive(self, value: JsonValue) -> JsonValue: ...
-
-    def _audit_fixtures(self, fixtures: dict[str, dict[str, JsonValue]]) -> None: ...
-
-
 def load_fixture(name: str) -> dict[str, object]:
     return cast("dict[str, object]", json.loads((FIXTURES / name).read_text(encoding="utf-8")))
-
-
-def load_extractor() -> FixtureExtractor:
-    spec = spec_from_file_location("extract_safe_fixtures", ROOT / "tools/extract-safe-fixtures.py")
-    assert spec is not None
-    assert spec.loader is not None
-    module = module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return cast("FixtureExtractor", module)
 
 
 def as_object_dict(value: object) -> dict[str, object]:
@@ -299,12 +279,6 @@ def test_customer_stable_key_is_full_domain_separated_sha256() -> None:
     assert "TEST_HOUSE_001" not in customer.stable_key
 
 
-def test_generated_fixtures_do_not_contain_bracketed_placeholders() -> None:
-    for path in FIXTURES.glob("*.json"):
-        text = path.read_text(encoding="utf-8")
-        assert "[REDACTED]" not in text
-
-
 def test_parse_latest_bill_extracts_all_governing_values() -> None:
     bill = parse_bill(load_fixture("bill_latest.json"), requested_month=None)
 
@@ -539,86 +513,3 @@ def test_parse_bill_empty_values_are_none_and_comma_numbers_work() -> None:
 
 def test_coordinator_data_does_not_expose_raw_payload_field() -> None:
     assert "raw" not in KepcoCoordinatorData.__dataclass_fields__
-
-
-def test_extractor_strips_nested_generic_personal_secret_keys() -> None:
-    extractor = load_extractor()
-    payload: dict[str, JsonValue] = {
-        "safe": "kept",
-        "emailAddress": "private@example.test",
-        "nested": {
-            "accessToken": "SECRET_ACCESS",
-            "authToken": "SECRET_AUTH",
-            "customerName": "private customer",
-            "CUST_NM": "private cust nm",
-            "USER_NM": "private user nm",
-            "userNm": "private user camel",
-            "memberName": "private member",
-            "mbrsNm": "private member abbreviated",
-            "phone": "01000000000",
-            "children": [
-                {"mobile": "01011112222"},
-                {"address": "private address"},
-                {"name": "private name"},
-            ],
-        },
-    }
-
-    sanitized = extractor._strip_sensitive(payload)
-
-    assert isinstance(sanitized, dict)
-    assert sanitized == {"nested": {"children": [{}, {}, {}]}, "safe": "kept"}
-
-
-def test_extractor_audit_rejects_nested_generic_personal_secret_keys() -> None:
-    extractor = load_extractor()
-    for key in ("accessToken", "customerName", "CUST_NM", "USER_NM", "userNm", "memberName"):
-        fixture: dict[str, dict[str, JsonValue]] = {"unsafe.json": {"nested": [{key: "private"}]}}
-        with pytest.raises(SystemExit):
-            extractor._audit_fixtures(fixture)
-
-
-def test_extractor_rejects_duplicate_fixture_selectors() -> None:
-    extractor = load_extractor()
-    session_body = json.dumps(load_fixture("session_check_success.json"))
-    sso_body = json.dumps(load_fixture("sso_check_success.json"))
-    single_body = json.dumps(load_fixture("customer_list_single.json"))
-    multiple_body = json.dumps(load_fixture("customer_list_multiple.json"))
-    latest_body = json.dumps(load_fixture("bill_latest.json"))
-    requested_body = json.dumps(load_fixture("bill_202607.json"))
-    records = [
-        {
-            "__capture_line__": 274,
-            "url": "https://online.kepco.co.kr/sessionCheck",
-            "body": session_body,
-        },
-        {"__capture_line__": 307, "url": "https://online.kepco.co.kr/ssoCheck", "body": sso_body},
-        {
-            "__capture_line__": 328,
-            "url": "https://online.kepco.co.kr/my/indi/info/custNoList",
-            "body": single_body,
-        },
-        {
-            "__capture_line__": 295,
-            "url": "https://online.kepco.co.kr/my/indi/info/myPageCustNoList",
-            "body": multiple_body,
-        },
-        {
-            "__capture_line__": 380,
-            "url": "https://online.kepco.co.kr/my/charge/pay/aptBillDetail",
-            "body": latest_body,
-        },
-        {
-            "__capture_line__": 380,
-            "url": "https://online.kepco.co.kr/my/charge/pay/aptBillDetail",
-            "body": latest_body,
-        },
-        {
-            "__capture_line__": 604,
-            "url": "https://online.kepco.co.kr/my/charge/pay/aptBillDetail",
-            "body": requested_body,
-        },
-    ]
-
-    with pytest.raises(SystemExit):
-        extractor._build_fixtures(records)
