@@ -294,6 +294,57 @@
       },
       "power_planner_predicted_amount": {
         "name": "현재 검침기간 예상 요금"
+      },
+      "power_planner_today_max_interval_usage": {
+        "name": "오늘 최대 구간 사용량"
+      },
+      "power_planner_today_min_interval_usage": {
+        "name": "오늘 최소 구간 사용량"
+      },
+      "power_planner_today_average_interval_usage": {
+        "name": "오늘 평균 구간 사용량"
+      },
+      "power_planner_data_coverage_ratio": {
+        "name": "오늘 구간 수집률"
+      },
+      "power_planner_current_bill_level": {
+        "name": "현재 누진단계"
+      },
+      "power_planner_predicted_bill_level": {
+        "name": "예상 누진단계"
+      },
+      "power_planner_calendar_month_usage": {
+        "name": "달력 이번 달 사용량"
+      },
+      "power_planner_calendar_year_usage": {
+        "name": "달력 올해 사용량"
+      },
+      "power_planner_prior_year_same_day_usage": {
+        "name": "전일 기준 전년 같은 날짜 사용량"
+      },
+      "power_planner_same_day_year_on_year_usage_difference": {
+        "name": "전일 전년 대비 사용량 차이"
+      },
+      "power_planner_same_day_year_on_year_usage_ratio": {
+        "name": "전일 전년 대비 사용량 변화율"
+      },
+      "power_planner_regional_average_usage": {
+        "name": "지역 비교 평균 사용량"
+      },
+      "power_planner_saving_neighbor_usage": {
+        "name": "절약이웃 사용량"
+      },
+      "power_planner_regional_usage_percentile": {
+        "name": "지역 사용량 순위 백분율"
+      },
+      "power_planner_regional_average_amount": {
+        "name": "지역 비교 평균 요금"
+      },
+      "power_planner_saving_neighbor_amount": {
+        "name": "절약이웃 요금"
+      },
+      "power_planner_regional_amount_percentile": {
+        "name": "지역 요금 순위 백분율"
       }
     }
   }

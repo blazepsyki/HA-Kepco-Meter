@@ -505,6 +505,8 @@ class PowerPlannerSensorDescription(SensorEntityDescription):
     device_group: KepcoDeviceGroup
     field_name: str
     source_field: str
+    metadata_source: str = "period"
+    conversion_basis: str = "provider_kwh"
 
 
 PLANNER_DESCRIPTIONS = tuple(
@@ -513,6 +515,17 @@ PLANNER_DESCRIPTIONS = tuple(
         translation_key=key,
         field_name=field_name,
         source_field=source_field,
+        metadata_source="yesterday"
+        if key == "power_planner_yesterday_usage"
+        else "day"
+        if key
+        in {
+            "power_planner_today_usage",
+            "power_planner_yesterday_usage",
+            "power_planner_recent_interval_usage",
+        }
+        else "period",
+        conversion_basis="provider_krw" if monetary else "provider_kwh",
         device_group=KepcoDeviceGroup.ELECTRICITY_CHARGE
         if monetary
         else KepcoDeviceGroup.METER_USAGE,
@@ -529,6 +542,203 @@ PLANNER_DESCRIPTIONS = tuple(
         ("power_planner_current_amount", "current_amount_krw", "TOTAL_CHARGE", True),
         ("power_planner_predicted_amount", "predicted_amount_krw", "PREDICT_TOTAL_CHARGE", True),
     )
+)
+PLANNER_DESCRIPTIONS += tuple(
+    PowerPlannerSensorDescription(
+        key=f"power_planner_{key}",
+        translation_key=f"power_planner_{key}",
+        field_name=field_name,
+        source_field=source_field,
+        metadata_source=source,
+        conversion_basis=basis,
+        device_group=group,
+        native_unit_of_measurement=unit,
+        device_class=SensorDeviceClass.ENERGY
+        if unit == "kWh"
+        else SensorDeviceClass.MONETARY
+        if unit == "KRW"
+        else None,
+        suggested_display_precision=0 if unit == "KRW" or unit is None else 2,
+        entity_registry_enabled_default=enabled,
+        entity_category=EntityCategory.DIAGNOSTIC if key == "data_coverage_ratio" else None,
+    )
+    for key, field_name, source_field, unit, source, basis, group, enabled in (
+        (
+            "today_max_interval_usage",
+            "today_max_interval_usage_kwh",
+            "F_AP_QT",
+            "kWh",
+            "day",
+            "derived_valid_intervals",
+            KepcoDeviceGroup.METER_USAGE,
+            True,
+        ),
+        (
+            "today_min_interval_usage",
+            "today_min_interval_usage_kwh",
+            "F_AP_QT",
+            "kWh",
+            "day",
+            "derived_valid_intervals",
+            KepcoDeviceGroup.METER_USAGE,
+            True,
+        ),
+        (
+            "today_average_interval_usage",
+            "today_average_interval_usage_kwh",
+            "F_AP_QT",
+            "kWh",
+            "day",
+            "derived_valid_intervals",
+            KepcoDeviceGroup.METER_USAGE,
+            True,
+        ),
+        (
+            "data_coverage_ratio",
+            "data_coverage_ratio_pct",
+            "NO_DATA_YN",
+            "%",
+            "day",
+            "derived_valid_intervals",
+            KepcoDeviceGroup.METER_USAGE,
+            False,
+        ),
+        (
+            "current_bill_level",
+            "current_bill_level",
+            "BILL_LEVEL",
+            None,
+            "tier",
+            "provider_level",
+            KepcoDeviceGroup.ELECTRICITY_CHARGE,
+            True,
+        ),
+        (
+            "predicted_bill_level",
+            "predicted_bill_level",
+            "PREDICT_BILL_LEVEL",
+            None,
+            "period",
+            "provider_level",
+            KepcoDeviceGroup.ELECTRICITY_CHARGE,
+            True,
+        ),
+        (
+            "calendar_month_usage",
+            "calendar_month_usage_kwh",
+            "F_AP_QT",
+            "kWh",
+            "month",
+            "provider_kwh",
+            KepcoDeviceGroup.METER_USAGE,
+            True,
+        ),
+        (
+            "calendar_year_usage",
+            "calendar_year_usage_kwh",
+            "F_AP_QT",
+            "kWh",
+            "year",
+            "sum_calendar_months",
+            KepcoDeviceGroup.MONTHLY_USAGE,
+            True,
+        ),
+        (
+            "prior_year_same_day_usage",
+            "prior_year_same_day_usage_kwh",
+            "LYEAR_F_AP_QT",
+            "kWh",
+            "day_comparison",
+            "provider_kwh",
+            KepcoDeviceGroup.METER_USAGE,
+            False,
+        ),
+        (
+            "same_day_year_on_year_usage_difference",
+            "same_day_year_on_year_usage_difference_kwh",
+            "F_AP_QT,LYEAR_F_AP_QT",
+            "kWh",
+            "day_comparison",
+            "derived_day_comparison",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+        (
+            "same_day_year_on_year_usage_ratio",
+            "same_day_year_on_year_usage_ratio_pct",
+            "F_AP_QT,LYEAR_F_AP_QT",
+            "%",
+            "day_comparison",
+            "derived_day_comparison",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+        (
+            "regional_average_usage",
+            "regional_average_usage_kwh",
+            "F_AP_QT_ALL_DISP",
+            "kWh",
+            "neighbors",
+            "provider_kwh",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+        (
+            "saving_neighbor_usage",
+            "saving_neighbor_usage_kwh",
+            "F_AP_QT_SAVE_DISP",
+            "kWh",
+            "neighbors",
+            "provider_kwh",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+        (
+            "regional_usage_percentile",
+            "regional_usage_percentile_pct",
+            "RANK_RATE",
+            "%",
+            "neighbors",
+            "provider_top_percent",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+        (
+            "regional_average_amount",
+            "regional_average_amount_krw",
+            "F_AP_QT_ALL_DISP",
+            "KRW",
+            "neighbors",
+            "provider_krw",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+        (
+            "saving_neighbor_amount",
+            "saving_neighbor_amount_krw",
+            "F_AP_QT_SAVE_DISP",
+            "KRW",
+            "neighbors",
+            "provider_krw",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+        (
+            "regional_amount_percentile",
+            "regional_amount_percentile_pct",
+            "RANK_RATE",
+            "%",
+            "neighbors",
+            "provider_top_percent",
+            KepcoDeviceGroup.NEIGHBOR_COMPARISON,
+            False,
+        ),
+    )
+)
+PLANNER_DEFAULT_KEYS = frozenset(
+    description.key
+    for description in PLANNER_DESCRIPTIONS
+    if description.entity_registry_enabled_default
 )
 PLANNER_KEYS = frozenset(description.key for description in PLANNER_DESCRIPTIONS)
 PLANNER_NEW_KEYS = PLANNER_KEYS - POWER_PLANNER_FIELDS.keys()
@@ -640,11 +850,30 @@ class PowerPlannerSensor(CoordinatorEntity[PowerPlannerCoordinator], SensorEntit
             "data_status": status,
             "integration_version": VERSION,
             "value_divisor": 1,
-            "conversion_basis": "provider_kwh" if "kwh" in name else "provider_krw",
+            "conversion_basis": self.entity_description.conversion_basis,
             "request_variant": "main_customer_hourly",
             "interval_minutes": snapshot.interval_minutes,
         }
-        if name in {"today_usage_kwh", "yesterday_usage_kwh", "recent_interval_usage_kwh"}:
+        metadata = snapshot.source_metadata.get(self.entity_description.metadata_source)
+        if metadata is not None:
+            attributes.update(
+                period_kind=metadata.period_kind,
+                usage_period_start=metadata.period_start,
+                usage_period_end=metadata.period_end,
+                reference_date=metadata.reference_date,
+                last_successful_fetch=metadata.fetched_at.isoformat()
+                if metadata.fetched_at is not None
+                else None,
+            )
+            if metadata.comparison_date is not None:
+                attributes["comparison_date"] = metadata.comparison_date
+                attributes["calendar_date"] = metadata.reference_date
+            if metadata.comparison_period is not None:
+                attributes["comparison_period"] = metadata.comparison_period
+                attributes["comparison_scope"] = metadata.comparison_scope
+                if self.entity_description.source_field == "RANK_RATE":
+                    attributes["rank_basis"] = "provider_top_percent"
+        if self.entity_description.metadata_source in {"day", "yesterday"}:
             calendar_date = snapshot.calendar_date
             if calendar_date is not None and name == "yesterday_usage_kwh":
                 calendar_date -= timedelta(days=1)
@@ -654,7 +883,7 @@ class PowerPlannerSensor(CoordinatorEntity[PowerPlannerCoordinator], SensorEntit
                 if name == "yesterday_usage_kwh"
                 else snapshot.today_valid_intervals
             )
-        else:
+        elif metadata is None:
             attributes.update(
                 usage_period_start=snapshot.period_start,
                 usage_period_end=snapshot.period_end,
@@ -815,13 +1044,15 @@ async def _async_remove_stale_registry_entries(
             entity_registry.async_remove(registry_entry.entity_id)
             continue
         if sensor_key in PLANNER_NEW_KEYS and (not enabled or customer_key != planner_key):
+            if sensor_key not in PLANNER_DEFAULT_KEYS:
+                continue
             if registry_entry.disabled_by is None:
                 entity_registry.async_update_entity(
                     registry_entry.entity_id, disabled_by=RegistryEntryDisabler.INTEGRATION
                 )
             continue
         if (
-            sensor_key in ACTIVE_SENSOR_KEYS | PLANNER_KEYS
+            sensor_key in ACTIVE_SENSOR_KEYS | PLANNER_DEFAULT_KEYS
             and registry_entry.disabled_by == RegistryEntryDisabler.INTEGRATION
         ):
             entity_registry.async_update_entity(registry_entry.entity_id, disabled_by=None)
