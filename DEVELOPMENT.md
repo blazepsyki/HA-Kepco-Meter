@@ -10,6 +10,7 @@
 | `auth.py`, `session_store.py` | 로그인, 세션 검증, 인증 정보 저장·복원 |
 | `parser.py`, `models.py` | 응답 검증과 불변 데이터 모델 |
 | `coordinator.py` | 선택 고객의 순차 갱신과 고객별 오류 관리 |
+| `power_planner.py`, `power_planner_coordinator.py` | Power Planner 홈페이지의 별도 인증·세션 저장·파싱·갱신 |
 | `config_flow.py`, `__init__.py` | 설정, 재인증, 마이그레이션, 로드·해제 |
 | `sensor.py`, `services.py` | 센서 상태와 응답 액션 |
 | `diagnostics.py`, `repairs.py` | 제한된 진단 요약과 복구 안내 |
@@ -98,7 +99,7 @@ JSON 요청은 `Content-Type: application/json; charset=UTF-8`를 사용하고 �
 
 상세 조회의 연결·제한·형식 오류는 이력을 유지하고 `house_detail_status`에 기록합니다. 인증 오류와 취소는 상위 흐름에 전달합니다. 과거월 조회에는 현재 검침기간의 Power Planner 값을 붙이지 않습니다.
 
-## Power Planner 계약별 처리
+## 한전ON 내부 Power Planner 계약별 처리
 
 | 계약 | 요청 | 값 처리 |
 | --- | --- | --- |
@@ -108,6 +109,31 @@ JSON 요청은 `Content-Type: application/json; charset=UTF-8`를 사용하고 �
 종합계약의 변환은 사용자 보고에 따른 호환 처리입니다. 한전 전체 계약의 공통 단위로 확인된 것은 아닙니다. 공개 화면은 `PREDICT_TOT`를 예상 요금으로 설명한 이력이 있으므로 수치 크기로 에너지 단위를 추론하지 않습니다. `conversion_basis`와 `value_divisor` 속성에 변환 근거를 표시합니다.
 
 `RETURN_CD`가 없거나 `00`일 때만 값 파싱을 진행합니다. 실제 0은 유지하고 누락·잘못된 숫자·음수·NaN·Infinity는 구분합니다. 한 필드의 오류가 다른 정상 필드나 청구 데이터를 지우지 않습니다.
+
+## Power Planner 홈페이지 연동
+
+선택 기능은 `https://pp.kepco.co.kr`의 웹 요청을 재현합니다. 한전ON 내부 `/my/memo/powerPlanner`와 인증·단위·기간 계약이 다릅니다. `PowerPlannerSnapshot`과 별도 coordinator를 사용하고, 한전ON 청구 모델에 현재 기간의 값을 결합하지 않습니다.
+
+| 용도 | 메서드·경로 | 요청·검증 |
+| --- | --- | --- |
+| 로그인 준비 | GET `/intro.do` | `cookieSsId`·`cookieRsa`를 URI decode하고 HTML의 RSA exponent 확인 |
+| 계정 확인 | POST `/intro/chkUser.do` | RSA PKCS1 v1.5로 암호화한 `USER_ID`·`USER_PWD`, `USER_CI: ""`, `TYPE: "I"` |
+| 로그인 | POST `/login` | 계정 확인과 같은 암호문, 홈페이지의 `APT_YN` 조건과 `SSO_ID`를 form으로 전송 |
+| 로그인 검증 | GET `/rm/rm0201.do` | 로그인 입력 없음, 로그아웃·사용량 메뉴 존재 확인 |
+| 세션 유지 | POST `/auth/refreshToken.do` | `{}`. 세션 유지 성공이 장시간 유효성을 보장하지는 않음 |
+| 고객·계약 확인 | POST `/auth/usercustno_list.do`, `/rm/rm0101_contract_info.do` | `{}`. 목록에 존재하는 계약 `CUSTNO`와 선택 세대 계약번호의 정확한 일치, `SESSION_MR_CYCLE_MIN == 60` 확인 |
+| 스마트뷰 | POST `/rm/getRM0201.do` | `menuType: "time"`, `TOU: false`. `F_AP_QT`·`PREDICT_TOT`는 kWh, `TOTAL_CHARGE`·`PREDICT_TOTAL_CHARGE`는 KRW |
+| 일별 합계·시간별 구간 | POST `/rs/rs0201_list.do`, `/rs/rs0201_chart.do` | 한국 시간 `SELECT_DT: "YYYY-MM-DD"`, `selectType: "all"`, `TIME_TYPE: "1"` |
+
+`CookieJar(quote_cookie=False)`를 사용합니다. 기본 CookieJar의 인용 처리로는 실제 로그인 실패가 재현됐습니다. `JSESSIONID`는 opaque cookie이므로 RFC 6265 허용 문자와 길이 상한을 검증하고, `kepco_on.power_planner.{entry_id}` Store에 이 쿠키만 저장합니다. 옵션의 일회성 비밀번호는 저장하지 않으며, 기존 Config Entry에 저장한 비밀번호가 있을 때만 런타임 자동 재로그인에 사용합니다.
+
+로그인 리디렉션은 같은 origin의 `/rm/rm0201.do`만 허용합니다. 실제 응답의 `menu_id` 파라미터는 전달하지 않고 고정된 검증 URL을 조회합니다. 다른 경로·호스트·파라미터는 거부합니다. TLS 검증, 30초 타임아웃과 2 MiB 응답 상한을 유지합니다. 읽기 요청의 네트워크·500·502·503 오류는 최대 3회 시도하지만 인증 정보를 제출하는 두 요청은 자동 재시도하지 않습니다. 429는 즉시 제한 상태로 반환하고 다음 20분 주기까지 기다립니다. 세션 만료 시 저장 비밀번호가 있으면 한 번만 재로그인합니다.
+
+날짜는 스마트뷰의 `START_DT`·`SELECT_DT`·`END_DT`에서 확인하고 현재 한국 날짜가 조회 기간에 포함되어야 합니다. 한 필드의 잘못된 숫자는 해당 필드만 보류합니다. 시간별 응답은 중복 없는 24개 연속 시간 구간을 요구합니다. `NO_DATA_YN: "Y"`가 숫자보다 우선하며, `"N"`인 구간의 실제 0은 유지합니다. 어제는 24개 유효 구간이 모두 있을 때만 합계를 표시하고 이 결과만 캐시합니다. 오늘은 일부 수집값을 `partial`로 표시합니다.
+
+옵션 활성화 때 검증한 고객의 stable key에만 연결하며 다른 고객은 기존 한전ON 조회를 유지합니다. 연동 고객의 기존 두 엔티티는 고유 ID·기기를 유지하고 별도 coordinator에 연결하며 센서 다섯 개를 추가합니다. 청구 조회에서 같은 고객의 한전ON 내부 Power Planner 요청만 생략합니다. 홈페이지 장애·인증 만료는 해당 센서의 `unknown`·상태·복구 알림으로 표현합니다.
+
+2026-10-13에 실제 계정 한 개에서 배포 코드의 로그인, 7개 값 조회, 새 클라이언트의 비밀번호 없는 쿠키 복구, 두 사이트 세션 공존을 확인했습니다. 실제 금액·사용량·식별자·쿠키 값은 검증 결과에 저장하지 않았습니다. 장시간 갱신, 모든 계약 유형, 실제 Home Assistant 설치에서의 옵션 조작·재시작은 아직 확인하지 않았습니다. 마지막 계량 시각과 Energy Dashboard 통계는 검증 후 별도로 구현합니다.
 
 ## 개인정보 처리와 조사 도구
 

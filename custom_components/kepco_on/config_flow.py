@@ -35,13 +35,16 @@ from .const import (
     DEFAULT_POLLING_INTERVAL_HOURS,
     DOMAIN,
     OPT_CO2_FACTOR_KG_PER_KWH,
+    OPT_ENABLE_POWER_PLANNER,
     OPT_HISTORY_MONTHS,
     OPT_POLLING_INTERVAL_HOURS,
+    OPT_POWER_PLANNER_CUSTOMER_ID,
     POLLING_INTERVAL_HOURS,
 )
 from .exceptions import (
     KepcoOnAuthError,
     KepcoOnConnectionError,
+    KepcoOnError,
     KepcoOnMfaRequired,
     KepcoOnNoCustomersError,
     KepcoOnProtocolError,
@@ -56,8 +59,10 @@ from .models import (
     selected_customers,
     serialize_customer,
     stored_customers,
+    strict_selected_stored_customers,
     validate_selected_keys,
 )
+from .power_planner import ORIGIN, PowerPlannerClient, PowerPlannerSessionStore
 from .session_store import session_to_payload
 
 DEFAULT_HISTORY_MONTHS = 12
@@ -532,6 +537,7 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
+        self._planner_customer_key: str | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -547,12 +553,78 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
                 data_schema=self._schema(),
                 errors={"base": error},
             )
+        enabled = bool(options.get(OPT_ENABLE_POWER_PLANNER, False))
+        was_enabled = bool(self._config_entry.options.get(OPT_ENABLE_POWER_PLANNER, False))
+        if enabled and (not was_enabled or user_input.get(CONF_PASSWORD)):
+            error = await self._async_prepare_planner(user_input.get(CONF_PASSWORD))
+            if error is not None:
+                return self.async_show_form(
+                    step_id="init", data_schema=self._schema(), errors={"base": error}
+                )
+            options[OPT_POWER_PLANNER_CUSTOMER_ID] = self._planner_customer_key
+        elif was_enabled and not enabled:
+            try:
+                await PowerPlannerSessionStore(self.hass, self._config_entry.entry_id).async_clear()
+            except OSError:
+                return self.async_show_form(
+                    step_id="init", data_schema=self._schema(), errors={"base": "unknown"}
+                )
         return self.async_create_entry(title=None, data=options)
+
+    async def _async_prepare_planner(self, supplied_password: object) -> str | None:
+        """Validate selected ownership and persist a cookie, never an option password."""
+        entry = self._config_entry
+        password = supplied_password or entry.data.get(CONF_PASSWORD)
+        if password is not None and not isinstance(password, str):
+            return "invalid_auth"
+        session = async_create_clientsession(
+            self.hass, auto_cleanup=False, cookie_jar=CookieJar(quote_cookie=False)
+        )
+        store = PowerPlannerSessionStore(self.hass, entry.entry_id)
+        try:
+            client = PowerPlannerClient(session)
+            if password:
+                await client.async_login(str(entry.data[CONF_USERNAME]), password)
+            else:
+                session_id = await store.async_load()
+                if session_id is None:
+                    return "power_planner_password_required"
+                session.cookie_jar.update_cookies({"JSESSIONID": session_id}, response_url=ORIGIN)
+                # The first read also verifies that the restored cookie remains valid.
+            customers = strict_selected_stored_customers(entry.data)
+            await client.async_validate_customers(
+                {customer.house_contract_number for customer in customers}
+            )
+            matches = [
+                customer.stable_key
+                for customer in customers
+                if customer.house_contract_number == client.main_customer_number
+            ]
+            if len(matches) != 1:
+                return "invalid_selection"
+            cookie = session.cookie_jar.filter_cookies(ORIGIN).get("JSESSIONID")
+            if cookie is None:
+                return "invalid_auth"
+            await store.async_save(cookie.value)
+            self._planner_customer_key = matches[0]
+        except KepcoOnError as error:
+            return _map_error(error)
+        except OSError, ValueError:
+            return "unknown"
+        finally:
+            await _close_session(session)
+        return None
 
     def _schema(self) -> vol.Schema:
         options = self._config_entry.options
         return vol.Schema(
             {
+                vol.Optional(
+                    OPT_ENABLE_POWER_PLANNER, default=options.get(OPT_ENABLE_POWER_PLANNER, False)
+                ): bool,
+                vol.Optional(CONF_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                ),
                 vol.Required(
                     OPT_POLLING_INTERVAL_HOURS,
                     default=str(
@@ -620,11 +692,28 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
             return {}, "invalid_history_months"
         if not 1 <= history_months <= 24:
             return {}, "invalid_history_months"
+        enabled = user_input.get(
+            OPT_ENABLE_POWER_PLANNER,
+            self._config_entry.options.get(OPT_ENABLE_POWER_PLANNER, False),
+        )
+        if not isinstance(enabled, bool):
+            return {}, "unknown"
+        planner_option = (
+            {OPT_ENABLE_POWER_PLANNER: enabled}
+            if OPT_ENABLE_POWER_PLANNER in user_input
+            or OPT_ENABLE_POWER_PLANNER in self._config_entry.options
+            else {}
+        )
+        if enabled and OPT_POWER_PLANNER_CUSTOMER_ID in self._config_entry.options:
+            planner_option[OPT_POWER_PLANNER_CUSTOMER_ID] = self._config_entry.options[
+                OPT_POWER_PLANNER_CUSTOMER_ID
+            ]
         return (
             {
                 OPT_POLLING_INTERVAL_HOURS: interval,
                 OPT_CO2_FACTOR_KG_PER_KWH: co2_factor,
                 OPT_HISTORY_MONTHS: history_months,
+                **planner_option,
             },
             None,
         )
