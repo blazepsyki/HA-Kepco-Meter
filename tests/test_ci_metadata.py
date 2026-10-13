@@ -193,11 +193,11 @@ def test_workflows_keep_pinned_actions_and_release_only_validated_main() -> None
                 if "uses" in step:
                     assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", step["uses"])
     release = load_yaml(WORKFLOWS / "release.yml")
-    trigger = workflow_on(release)["workflow_run"]
-    assert trigger["branches"] == ["main"]
-    assert trigger["workflows"] == ["Tests"]
+    assert set(workflow_on(release)) == {"workflow_dispatch"}
+    assert release["jobs"]["release"]["if"] == "github.ref == 'refs/heads/main'"
+    assert release["jobs"]["release"]["env"]["RELEASE_SHA"] == "${{ github.sha }}"
     source = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
-    assert 'run.get("name") == "Validate"' in source
+    assert 'for name in ("Tests", "Validate")' in source
     assert "${RELEASE_SHA}:custom_components/kepco_on" in source
     assert "--notes-file .local/release-notes.md" in source
 
