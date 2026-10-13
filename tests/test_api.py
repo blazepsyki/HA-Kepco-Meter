@@ -40,8 +40,6 @@ PASSWORD_SECRET = "PASSWORD_SECRET_CANARY"
 TOKEN_SECRET = "TOKEN_SECRET_CANARY"
 SLEEP_CALLS: list[float] = []
 
-pytestmark = pytest.mark.usefixtures("socket_enabled")
-
 
 class StaticLocalResolver:
     """Resolve the fixed KEPCO host to the local redirect test server."""
