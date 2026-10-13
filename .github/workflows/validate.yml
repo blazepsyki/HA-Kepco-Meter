@@ -1,3 +1,4 @@
+# Validate the test fork's Home Assistant and HACS metadata.
 name: Validate
 
 on:

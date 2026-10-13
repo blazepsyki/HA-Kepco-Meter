@@ -1,3 +1,4 @@
+# Verify the test fork on GitHub-hosted Linux runners.
 name: Tests
 
 on:
