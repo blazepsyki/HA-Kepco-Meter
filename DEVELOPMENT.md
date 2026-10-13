@@ -125,7 +125,7 @@ JSON 요청은 `Content-Type: application/json; charset=UTF-8`를 사용하고 �
 | 스마트뷰 | POST `/rm/getRM0201.do` | `menuType: "time"`, `TOU: false`. `F_AP_QT`·`PREDICT_TOT`는 kWh, `TOTAL_CHARGE`·`PREDICT_TOTAL_CHARGE`는 KRW |
 | 일별 합계·시간별 구간 | POST `/rs/rs0201_list.do`, `/rs/rs0201_chart.do` | 한국 시간 `SELECT_DT: "YYYY-MM-DD"`, `selectType: "all"`, `TIME_TYPE: "1"` |
 
-`CookieJar(quote_cookie=False)`를 사용합니다. 기본 CookieJar의 인용 처리로는 실제 로그인 실패가 재현됐습니다. `JSESSIONID`는 opaque cookie이므로 RFC 6265 허용 문자와 길이 상한을 검증하고, `kepco_on.power_planner.{entry_id}` Store에 이 쿠키만 저장합니다. 옵션의 일회성 비밀번호는 저장하지 않으며, 기존 Config Entry에 저장한 비밀번호가 있을 때만 런타임 자동 재로그인에 사용합니다.
+`CookieJar(quote_cookie=False)`를 사용합니다. 기본 CookieJar의 인용 처리로는 실제 로그인 실패가 재현됐습니다. `JSESSIONID`는 opaque cookie이므로 RFC 6265 허용 문자와 길이 상한을 검증하고, `kepco_on.power_planner.{entry_id}` Store에 이 쿠키만 저장합니다. 옵션 화면의 상시 비밀번호 칸은 없으며 저장 비밀번호나 유효한 세션을 사용합니다. 초기 연결·세션 만료로 로그인이 필요할 때만 별도 인증 단계를 표시합니다. 여기의 일회성 비밀번호는 저장하지 않으며, 기존 Config Entry에 저장한 비밀번호가 있을 때만 런타임 자동 재로그인에 사용합니다.
 
 로그인 리디렉션은 같은 origin의 `/rm/rm0201.do`만 허용합니다. 실제 응답의 `menu_id` 파라미터는 전달하지 않고 고정된 검증 URL을 조회합니다. 다른 경로·호스트·파라미터는 거부합니다. TLS 검증, 30초 타임아웃과 2 MiB 응답 상한을 유지합니다. 읽기 요청의 네트워크·500·502·503 오류는 최대 3회 시도하지만 인증 정보를 제출하는 두 요청은 자동 재시도하지 않습니다. 429는 즉시 제한 상태로 반환하고 다음 20분 주기까지 기다립니다. 세션 만료 시 저장 비밀번호가 있으면 한 번만 재로그인합니다.
 

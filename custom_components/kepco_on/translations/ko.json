@@ -75,15 +75,23 @@
           "polling_interval_hours": "조회 주기",
           "co2_factor_kg_per_kwh": "온실가스 환산계수 (kg CO₂/kWh)",
           "history_months": "이력 개월 수",
-          "enable_power_planner": "파워플래너 사용",
-          "password": "파워플래너 초기 로그인 비밀번호"
+          "enable_power_planner": "파워플래너 사용"
         },
         "data_description": {
           "polling_interval_hours": "한전ON 업데이트 사이의 시간입니다.",
           "co2_factor_kg_per_kwh": "세 개의 배출량 센서에 공통 적용되는 10 이하의 양수 소수 계수입니다.",
           "history_months": "사용량 이력 조회 액션이 반환할 개월 수입니다.",
-          "enable_power_planner": "현재·예측 사용량을 파워플래너로 조회하고 일별 사용량·요금을 추가합니다. 대표 고객과 60분 계량 주기를 지원합니다.",
-          "password": "기존 한전ON 계정의 비밀번호입니다. 이 입력값은 옵션에 저장하지 않습니다. 저장 비밀번호나 유효한 세션이 있으면 비워둘 수 있습니다."
+          "enable_power_planner": "현재·예측 사용량을 파워플래너로 조회하고 일별 사용량·요금을 추가합니다. 대표 고객과 60분 계량 주기를 지원합니다."
+        }
+      },
+      "power_planner_auth": {
+        "title": "파워플래너 인증",
+        "description": "사용할 수 있는 파워플래너 세션이 없습니다. 같은 한전ON 계정의 비밀번호를 입력하세요. 이 입력값은 저장하지 않습니다.",
+        "data": {
+          "password": "비밀번호"
+        },
+        "data_description": {
+          "password": "이번 로그인에만 사용합니다. 기존 계정의 비밀번호 저장 설정은 유지합니다."
         }
       }
     },
@@ -176,7 +184,7 @@
     },
     "power_planner_auth_required": {
       "title": "파워플래너 인증이 필요합니다",
-      "description": "통합 옵션에서 같은 계정의 비밀번호를 입력하고 파워플래너 설정을 저장하세요. 한전ON 청구 조회는 계속 사용할 수 있습니다."
+      "description": "통합 옵션에서 파워플래너 사용을 유지하고 저장하세요. 필요한 인증 화면에서 같은 계정의 비밀번호를 입력할 수 있습니다. 한전ON 청구 조회는 계속 사용할 수 있습니다."
     },
     "power_planner_unavailable": {
       "title": "파워플래너 조회를 완료하지 못했습니다",

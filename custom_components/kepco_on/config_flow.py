@@ -54,6 +54,7 @@ from .exceptions import (
 from .models import (
     KepcoAccountSession,
     KepcoCustomer,
+    PowerPlannerData,
     customer_location_name,
     selected_customer_location_title,
     selected_customers,
@@ -538,6 +539,7 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
         self._planner_customer_key: str | None = None
+        self._planner_options: dict[str, Any] | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -555,8 +557,16 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
             )
         enabled = bool(options.get(OPT_ENABLE_POWER_PLANNER, False))
         was_enabled = bool(self._config_entry.options.get(OPT_ENABLE_POWER_PLANNER, False))
-        if enabled and (not was_enabled or user_input.get(CONF_PASSWORD)):
-            error = await self._async_prepare_planner(user_input.get(CONF_PASSWORD))
+        planner = getattr(getattr(self._config_entry, "runtime_data", None), "power_planner", None)
+        planner_data = getattr(planner, "data", None)
+        needs_auth = isinstance(planner_data, PowerPlannerData) and any(
+            snapshot.status == "auth_required" for snapshot in planner_data.snapshots.values()
+        )
+        if enabled and (not was_enabled or needs_auth):
+            error = await self._async_prepare_planner(None)
+            if error in {"power_planner_password_required", "invalid_auth"}:
+                self._planner_options = options
+                return await self.async_step_power_planner_auth()
             if error is not None:
                 return self.async_show_form(
                     step_id="init", data_schema=self._schema(), errors={"base": error}
@@ -570,6 +580,38 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
                     step_id="init", data_schema=self._schema(), errors={"base": "unknown"}
                 )
         return self.async_create_entry(title=None, data=options)
+
+    async def async_step_power_planner_auth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Ask for a one-time password only when the existing session cannot be used."""
+        if self._planner_options is None:
+            return await self.async_step_init()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            password = user_input.get(CONF_PASSWORD)
+            error = (
+                await self._async_prepare_planner(password)
+                if isinstance(password, str) and password
+                else "invalid_auth"
+            )
+            if error is None:
+                options = self._planner_options
+                options[OPT_POWER_PLANNER_CUSTOMER_ID] = self._planner_customer_key
+                self._planner_options = None
+                return self.async_create_entry(title=None, data=options)
+            errors["base"] = error
+        return self.async_show_form(
+            step_id="power_planner_auth",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_PASSWORD): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    )
+                }
+            ),
+            errors=errors,
+        )
 
     async def _async_prepare_planner(self, supplied_password: object) -> str | None:
         """Validate selected ownership and persist a cookie, never an option password."""
@@ -586,7 +628,11 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
             if password:
                 await client.async_login(str(entry.data[CONF_USERNAME]), password)
             else:
-                session_id = await store.async_load()
+                try:
+                    session_id = await store.async_load()
+                except KepcoOnProtocolError:
+                    await store.async_clear()
+                    session_id = None
                 if session_id is None:
                     return "power_planner_password_required"
                 session.cookie_jar.update_cookies({"JSESSIONID": session_id}, response_url=ORIGIN)
@@ -622,9 +668,6 @@ class KepcoOnOptionsFlow(config_entries.OptionsFlowWithReload):
                 vol.Optional(
                     OPT_ENABLE_POWER_PLANNER, default=options.get(OPT_ENABLE_POWER_PLANNER, False)
                 ): bool,
-                vol.Optional(CONF_PASSWORD): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
-                ),
                 vol.Required(
                     OPT_POLLING_INTERVAL_HOURS,
                     default=str(
