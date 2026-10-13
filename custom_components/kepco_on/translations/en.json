@@ -296,6 +296,57 @@
       },
       "power_planner_predicted_amount": {
         "name": "Predicted period cost"
+      },
+      "power_planner_today_max_interval_usage": {
+        "name": "Maximum interval usage today"
+      },
+      "power_planner_today_min_interval_usage": {
+        "name": "Minimum interval usage today"
+      },
+      "power_planner_today_average_interval_usage": {
+        "name": "Average interval usage today"
+      },
+      "power_planner_data_coverage_ratio": {
+        "name": "Today interval collection progress"
+      },
+      "power_planner_current_bill_level": {
+        "name": "Current tariff tier"
+      },
+      "power_planner_predicted_bill_level": {
+        "name": "Predicted tariff tier"
+      },
+      "power_planner_calendar_month_usage": {
+        "name": "Calendar month usage"
+      },
+      "power_planner_calendar_year_usage": {
+        "name": "Calendar year usage"
+      },
+      "power_planner_prior_year_same_day_usage": {
+        "name": "Prior year usage for yesterday"
+      },
+      "power_planner_same_day_year_on_year_usage_difference": {
+        "name": "Yesterday year-on-year usage difference"
+      },
+      "power_planner_same_day_year_on_year_usage_ratio": {
+        "name": "Yesterday year-on-year usage change"
+      },
+      "power_planner_regional_average_usage": {
+        "name": "Regional comparison average usage"
+      },
+      "power_planner_saving_neighbor_usage": {
+        "name": "Saving neighbor usage"
+      },
+      "power_planner_regional_usage_percentile": {
+        "name": "Regional usage top percentile"
+      },
+      "power_planner_regional_average_amount": {
+        "name": "Regional comparison average cost"
+      },
+      "power_planner_saving_neighbor_amount": {
+        "name": "Saving neighbor cost"
+      },
+      "power_planner_regional_amount_percentile": {
+        "name": "Regional cost top percentile"
       }
     }
   }
