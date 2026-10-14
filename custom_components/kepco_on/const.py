@@ -82,8 +82,10 @@ POWER_PLANNER_SOURCE_KEYS: dict[str, frozenset[str]] = {
     ),
 }
 POWER_PLANNER_DEFAULT_SOURCES = frozenset({"tier", "month", "year"})
+APARTMENT_NEIGHBOR_SENSOR_KEYS = frozenset({"building_average_usage", "apartment_average_usage"})
 
 __all__ = [
+    "APARTMENT_NEIGHBOR_SENSOR_KEYS",
     "BASE_URL",
     "CANDIDATE_COOKIE_NAMES",
     "COMBINED_APARTMENT_PLANNER_CONTRACT",
