@@ -1048,6 +1048,21 @@ async def test_planner_platform_reuses_old_ids_and_does_not_replace_other_custom
     other = [entity for entity in entities if entity.customer.stable_key == "other"]
     assert len(bound) == 56
     assert len(other) == 34
+    assert {
+        group: sum(entity.entity_description.device_group is group for entity in bound)
+        for group in sensor.KepcoDeviceGroup
+    } == {
+        sensor.KepcoDeviceGroup.MONTHLY_USAGE: 7,
+        sensor.KepcoDeviceGroup.METER_USAGE: 5,
+        sensor.KepcoDeviceGroup.USAGE: 11,
+        sensor.KepcoDeviceGroup.USAGE_STATISTICS: 4,
+        sensor.KepcoDeviceGroup.ELECTRICITY_CHARGE: 10,
+        sensor.KepcoDeviceGroup.PLANNER_CHARGE: 4,
+        sensor.KepcoDeviceGroup.USAGE_COMPARISON: 3,
+        sensor.KepcoDeviceGroup.NEIGHBOR_COMPARISON: 9,
+        sensor.KepcoDeviceGroup.GREENHOUSE_GAS: 3,
+    }
+    assert len({next(iter(entity.device_info["identifiers"])) for entity in other}) == 6
     assert len({entity.unique_id for entity in entities}) == 90
     assert all(isinstance(entity, sensor.KepcoOnSensor) for entity in other)
     assert len([entity for entity in bound if isinstance(entity, PowerPlannerSensor)]) == 24
