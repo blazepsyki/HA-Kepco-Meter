@@ -62,6 +62,8 @@ class PowerPlannerCoordinator(DataUpdateCoordinator[PowerPlannerData]):
         enabled: set[str] = set()
         for source, keys in POWER_PLANNER_SOURCE_KEYS.items():
             for customer in self.customers:
+                if source == "neighbors" and not customer.is_house:
+                    continue
                 for key in keys:
                     entry = entries.get(f"{customer.stable_key}_{key}")
                     if (entry is not None and entry.disabled_by is None) or (

@@ -37,7 +37,7 @@ from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 
 from .test_api_house import _house_customer
 from .test_power_planner_site import NOW, smart
-from .test_sensor import FakeDeviceRegistry, FakeEntityRegistry, entity_entry
+from .test_sensor import FakeDeviceRegistry, FakeEntityRegistry, customer, entity_entry
 
 DEFAULT_DAY = NOW.date()
 
@@ -453,8 +453,9 @@ def test_unverified_comparison_defaults_are_rejected(html: str) -> None:
         parser.validated(NOW.date())
 
 
+@pytest.mark.parametrize("is_house", [True, False])
 async def test_registry_sources_default_off_and_user_enable_are_respected(
-    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, is_house: bool
 ) -> None:
     registry = FakeEntityRegistry([])
     monkeypatch.setattr(er, "async_get", lambda hass: registry)
@@ -462,8 +463,9 @@ async def test_registry_sources_default_off_and_user_enable_are_respected(
     entry = SimpleNamespace(
         entry_id="planner", data={CONF_USERNAME: "PRIVATE"}, async_on_unload=lambda callback: None
     )
+    item = _house_customer() if is_house else customer("house-key")
     coordinator = PowerPlannerCoordinator(
-        hass, cast("Any", entry), cast("Any", object()), (_house_customer(),), None
+        hass, cast("Any", entry), cast("Any", object()), (item,), None
     )
     assert coordinator._enabled_sources() == frozenset({"tier", "month", "year"})
     registry.entries.append(
@@ -481,7 +483,8 @@ async def test_registry_sources_default_off_and_user_enable_are_respected(
             disabled_by=RegistryEntryDisabler.USER,
         )
     )
-    assert coordinator._enabled_sources() == frozenset({"tier", "month", "neighbors"})
+    expected = {"tier", "month", "neighbors"} if is_house else {"tier", "month"}
+    assert coordinator._enabled_sources() == frozenset(expected)
 
 
 async def test_optional_default_disabled_registry_entries_are_never_reenabled_on_reload(
