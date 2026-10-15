@@ -103,9 +103,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _close_session(session: ClientSession) -> None:
-    """Close a dedicated client session."""
+    """Detach a cookie session without closing Home Assistant's shared connector."""
     if not session.closed:
-        await session.close()
+        session.detach()
 
 
 def _clear_runtime_data(entry: ConfigEntry) -> None:

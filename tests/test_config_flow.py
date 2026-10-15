@@ -162,14 +162,14 @@ class FakeSession:
         self.cookie_jar = CookieJar()
         self.closed: bool = False
 
-    async def close(self) -> None:
+    def detach(self) -> None:
         self.closed = True
 
 
 class FailingCloseSession(FakeSession):
     """Session that fails on close without exposing the secret in the exception text."""
 
-    async def close(self) -> None:
+    def detach(self) -> None:
         raise RuntimeError("close failed")
 
 

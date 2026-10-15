@@ -212,9 +212,10 @@ def _can_use_live_reconfigure_client(entry: config_entries.ConfigEntry) -> bool:
 
 
 async def _close_session(client_session: Any | None) -> None:
+    """Detach the flow's cookie session while keeping HA's connector alive."""
     if client_session is not None and not getattr(client_session, "closed", False):
         try:
-            await client_session.close()
+            client_session.detach()
         except Exception:
             _LOGGER.warning("Failed to close KEPCO ON config flow session", exc_info=True)
 

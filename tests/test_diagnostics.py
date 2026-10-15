@@ -157,6 +157,8 @@ async def test_diagnostics_returns_whitelisted_summary_without_private_canaries(
                 "Any",
                 {
                     "selected-key": "protocol_error",
+                    "connection-key": "connection_error",
+                    "limited-key": "rate_limited",
                     "other-key": f"api_error:{TOKEN_SECRET}",
                     "jwt-key": JWT_SECRET,
                     "email-key": EMAIL_SECRET,
@@ -205,7 +207,7 @@ async def test_diagnostics_returns_whitelisted_summary_without_private_canaries(
         "availability": {
             "customers": 1,
             "bills": 1,
-            "bill_errors": 8,
+            "bill_errors": 10,
         },
         "parsed_fields": {
             "bill": [
@@ -242,6 +244,8 @@ async def test_diagnostics_returns_whitelisted_summary_without_private_canaries(
         },
         "error_categories": {
             "protocol_error": 1,
+            "connection_error": 1,
+            "rate_limited": 1,
             "unknown_error": 7,
         },
     }

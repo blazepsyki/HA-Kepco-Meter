@@ -834,11 +834,13 @@ def _async_group_device(
 ) -> DeviceEntry:
     """Create a group once and inherit settings from its original device."""
     info = _device_info(customer, group)
-    if target := registry.async_get_device(identifiers=info["identifiers"]):
+    if target := registry.async_get_device_by_identifier(
+        (DOMAIN, _device_identifier(customer, group)), entry_id
+    ):
         return target
     parent_group = _DEVICE_GROUP_PARENTS.get(group, group)
-    parent = registry.async_get_device(
-        identifiers={(DOMAIN, _device_identifier(customer, parent_group))}
+    parent = registry.async_get_device_by_identifier(
+        (DOMAIN, _device_identifier(customer, parent_group)), entry_id
     )
     target = registry.async_get_or_create(
         config_entry_id=entry_id,
