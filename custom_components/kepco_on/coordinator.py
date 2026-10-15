@@ -68,21 +68,45 @@ class KepcoOnDataUpdateCoordinator(DataUpdateCoordinator[KepcoCoordinatorData]):
         self.client = client
         self.customers = customers
         self.entry = entry
+        self._normal_update_interval = _update_interval(entry)
+        self._temporary_failures = 0
+
+    def _retry_interval(self, rate_limited: bool, retry_after: float) -> float:
+        """Back off transient failures without waiting for the full billing interval."""
+        self._temporary_failures = min(self._temporary_failures + 1, 6)
+        multiplier = float(2 ** (self._temporary_failures - 1))
+        seconds = (
+            max(min(20 * 60.0 * multiplier, 60 * 60.0), retry_after)
+            if rate_limited
+            else min(60.0 * multiplier, 15 * 60.0)
+        )
+        self.update_interval = timedelta(seconds=seconds)
+        return seconds
 
     async def _async_update_data(self) -> KepcoCoordinatorData:
         """Fetch each selected customer's latest bill sequentially."""
         bills: dict[str, KepcoBill] = {}
         errors: dict[str, str] = {}
         protocol_error_seen = False
+        temporary_error_seen = False
+        rate_limited = False
+        retry_after = 0.0
         for customer in self.customers:
+            if rate_limited:
+                errors[customer.stable_key] = "rate_limited"
+                continue
             try:
                 bills[customer.stable_key] = await self.client.async_get_bill(customer)
             except (KepcoOnSessionExpired, KepcoOnAuthError) as err:
                 del err
                 raise ConfigEntryAuthFailed("KEPCO ON authentication expired") from None
-            except (KepcoOnRateLimitError, KepcoOnConnectionError) as err:
-                del err
-                raise UpdateFailed("KEPCO ON temporary connection failure") from None
+            except KepcoOnRateLimitError as err:
+                temporary_error_seen = rate_limited = True
+                retry_after = err.retry_after or 0.0
+                errors[customer.stable_key] = "rate_limited"
+            except KepcoOnConnectionError:
+                temporary_error_seen = True
+                errors[customer.stable_key] = "connection_error"
             except KepcoOnProtocolError as err:
                 protocol_error_seen = True
                 async_create_issue(self.hass, self.entry, "bill_schema_changed")
@@ -90,6 +114,16 @@ class KepcoOnDataUpdateCoordinator(DataUpdateCoordinator[KepcoCoordinatorData]):
             except KepcoOnError as err:
                 errors[customer.stable_key] = _safe_customer_error(err)
 
+        if temporary_error_seen:
+            delay = self._retry_interval(rate_limited, retry_after)
+            if not bills:
+                reason = "rate limited" if rate_limited else "temporary connection failure"
+                raise UpdateFailed(
+                    f"KEPCO ON {reason}; retry in {delay:g}s", retry_after=delay
+                ) from None
+        else:
+            self._temporary_failures = 0
+            self.update_interval = self._normal_update_interval
         if not bills:
             raise UpdateFailed("No KEPCO ON selected customers updated")
         if not protocol_error_seen:

@@ -125,8 +125,10 @@ SAFE_HISTORY_FIELDS = ("amount_krw", "month", "usage_kwh")
 SAFE_ERROR_CATEGORIES = frozenset(
     {
         "api_error",
+        "connection_error",
         "no_customers",
         "protocol_error",
+        "rate_limited",
         "unknown_error",
     }
 )

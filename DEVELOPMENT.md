@@ -89,6 +89,16 @@ JSON 요청은 `Content-Type: application/json; charset=UTF-8`를 사용하고 �
 
 공개 화면 정의의 참고 경로는 `/ui/me/login/indi/MEM001D01.xml`, `/ui/my/indi/MYM001D00.xml`, `/ui/my/charge/MYM053D50.xml`입니다. 이 경로와 서버 동작은 변경될 수 있습니다. 저장소의 구현·회귀 검증과 실제 계정의 동작 확인을 구분합니다.
 
+## HTTP 세션 소유권과 청구 복구
+
+한전ON과 Power Planner, 설정·재인증·옵션 화면은 각각 `async_create_clientsession(auto_cleanup=False)`로 만든 별도의 CookieJar를 사용하지만 HA의 연결 풀을 공유합니다. 이 세션에 `close()`를 호출하면 HA가 관리하는 connector도 닫힐 수 있으므로 정리할 때는 `detach()`를 호출합니다. 성공·실패·언로드·흐름 종료 경로에서 같은 정책을 사용합니다. 쿠키·로그인 토큰은 각 사이트의 기존 Store로 분리하며 공유 연결 풀을 임의로 교체하거나 닫지 않습니다.
+
+청구 coordinator는 일시 연결 실패에 60·120·240·480·900초의 상한 있는 backoff를 적용합니다. 전체 실패는 `UpdateFailed(retry_after=...)`, 부분 실패는 짧아진 `update_interval`을 통해 HA의 기존 갱신 스케줄러를 사용합니다. 별도 타이머나 재로드 반복 작업을 만들지 않습니다. 성공한 고객의 새 청구만 반환하고 실패 고객은 안전한 `connection_error`·`rate_limited` 코드로 기록합니다. 모든 고객에서 일시 오류가 사라지면 실패 횟수와 조회 주기를 초기화합니다. 전체 실패 때는 HA가 이전 스냅샷을 보관하면서 센서의 사용 가능 상태를 해제합니다.
+
+429는 계정 공통 제한으로 보고 그 갱신의 뒤쪽 고객을 요청하지 않습니다. 기본 대기는 20·40·60분이며 서버 `Retry-After`가 더 길면 반영합니다. transport 안의 대기는 최대 30초로 제한하고, 초과 대기 시간은 예외의 `retry_after`를 통해 다음 갱신까지 전달합니다. 서버 헤더는 정수 초·HTTP 날짜만 해석하며 최대 24시간으로 제한합니다. 이 간격은 통합의 복구 정책이며 한전 서버의 허용 정책으로 확인한 값은 아닙니다. 첫 갱신 실패는 HA의 `ConfigEntryNotReady` 재시도에 맡기며, 인증 실패와 미지원 응답을 일반 통신 장애로 무한 재로그인하지 않습니다.
+
+기기 identifier는 config entry 안에서만 유일하므로 `async_get_device_by_identifier(identifier, entry_id)`로 조회합니다. 기기 분류 마이그레이션의 대상과 부모 기기 모두 같은 범위를 적용합니다. config entry가 다른 동일 identifier의 기기를 사용하지 않는 회귀와 실제 HA 세션 생성기를 사용한 공유 connector 생존 회귀를 유지합니다. 실제 coordinator 갱신 타이머 테스트는 재시도 콜백의 대기 시점만 앞당겨, 수동 refresh 없이 복구하고 언로드 시 예약이 취소되는 것을 검증합니다.
+
 ## 주택 청구 상세와 값 보존
 
 `mainChart`의 `dlt_chart`에서 월별 `jojYmFilter`, `kwh`, `afterMny`, `gigan`을 읽습니다. 최신 월 또는 요청한 월을 선택하고, 이력에 존재하는 전월·전년동월 사용량을 비교값으로 사용합니다. 요청한 월이 없으면 다른 월을 대신 반환하지 않습니다.
