@@ -1314,6 +1314,42 @@ async def test_coordinator_connection_and_rate_limit_raise_update_failed() -> No
             await coordinator._async_update_data()
 
 
+async def test_cookie_session_cleanup_keeps_home_assistant_connector_alive(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import custom_components.kepco_on as integration
+    from custom_components.kepco_on import config_flow
+    from homeassistant.helpers import aiohttp_client
+
+    connector = TCPConnector()
+    # Keep the real HA session factory without starting network discovery.
+    monkeypatch.setattr(aiohttp_client, "_async_get_connector", lambda *args: connector)
+    billing = aiohttp_client.async_create_clientsession(
+        hass, auto_cleanup=False, cookie_jar=CookieJar()
+    )
+    planner = aiohttp_client.async_create_clientsession(
+        hass, auto_cleanup=False, cookie_jar=CookieJar(quote_cookie=False)
+    )
+    assert billing.connector is connector
+    assert planner.connector is connector
+    assert billing.cookie_jar is not planner.cookie_jar
+    try:
+        await integration._close_session(billing)
+        assert billing.closed
+        assert not bool(planner.closed)
+        assert not connector.closed
+        await config_flow._close_session(planner)
+        assert planner.closed
+        assert not connector.closed
+        await integration._close_session(billing)
+        assert not connector.closed
+    finally:
+        billing.detach()
+        planner.detach()
+        await connector.close()
+
+
 @pytest.mark.parametrize("failure_position", [0, 1])
 @pytest.mark.parametrize("rate_limited", [False, True])
 async def test_transient_customer_failure_keeps_new_successes_and_recovers(

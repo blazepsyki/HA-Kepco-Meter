@@ -558,8 +558,8 @@ async def test_device_split_migrates_disabled_sensors_and_preserves_settings(
             before = originals[description.key]
             after = registry.async_get(before.entity_id)
             assert after is not None
-            target = devices.async_get_device(
-                identifiers={(DOMAIN, sensor._device_identifier(item, description.device_group))}
+            target = devices.async_get_device_by_identifier(
+                (DOMAIN, sensor._device_identifier(item, description.device_group)), "entry-1"
             )
             assert target is not None
             assert after.device_id == target.id
@@ -580,13 +580,13 @@ async def test_device_split_migrates_disabled_sensors_and_preserves_settings(
             assert preserved is not None
             assert preserved.name_by_user == f"Custom {group.value}"
         if existing_targets:
-            target = devices.async_get_device(identifiers={(DOMAIN, "cust-a:usage")})
+            target = devices.async_get_device_by_identifier((DOMAIN, "cust-a:usage"), "entry-1")
             assert target is not None
             assert target.area_id == custom_area
             assert target.name_by_user == "Custom usage"
 
     # Keep an empty planner device when another platform still uses it.
-    stats = devices.async_get_device(identifiers={(DOMAIN, "cust-a:usage_statistics")})
+    stats = devices.async_get_device_by_identifier((DOMAIN, "cust-a:usage_statistics"), "entry-1")
     assert stats is not None
     foreign = registry.async_get_or_create(
         "sensor",
@@ -650,7 +650,7 @@ async def test_device_disabled_usage_stays_disabled_after_split(
     await sensor.async_setup_entry(
         hass, cast("Any", entry(coordinator=coordinator)), cast("Any", entities.extend)
     )
-    target = devices.async_get_device(identifiers={(DOMAIN, "cust-a:usage")})
+    target = devices.async_get_device_by_identifier((DOMAIN, "cust-a:usage"), "entry-1")
     assert target is not None
     current = registry.async_get(registered.entity_id)
     assert current is not None
@@ -659,6 +659,53 @@ async def test_device_disabled_usage_stays_disabled_after_split(
         RegistryEntryDisabler.USER if existing_target else RegistryEntryDisabler.DEVICE
     )
     assert target.disabled_by == (None if existing_target else dr.DeviceEntryDisabler.USER)
+
+
+async def test_group_device_lookup_is_scoped_to_its_own_config_entry(
+    hass: HomeAssistant, registry_config_entry: ConfigEntry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from custom_components.kepco_on import sensor
+    from homeassistant.helpers import device_registry as dr
+
+    other: ConfigEntry = ConfigEntry(
+        domain=DOMAIN,
+        entry_id="entry-2",
+        data={},
+        options={},
+        version=3,
+        minor_version=1,
+        title="Other",
+        source="user",
+        unique_id="other",
+        discovery_keys=MappingProxyType({}),
+        subentries_data=None,
+    )
+    hass.config_entries._entries[other.entry_id] = other
+    registry = dr.async_get(hass)
+    item = customer("cust-a")
+    foreign = registry.async_get_or_create(
+        config_entry_id=other.entry_id, **sensor._device_info(item, sensor.KepcoDeviceGroup.USAGE)
+    )
+    registry.async_update_device(foreign.id, name_by_user="Other entry device")
+
+    def deprecated_lookup(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Deprecated unscoped device lookup was called")
+
+    monkeypatch.setattr(registry, "async_get_device", deprecated_lookup)
+    target = sensor._async_group_device(
+        registry, registry_config_entry.entry_id, item, sensor.KepcoDeviceGroup.USAGE
+    )
+    assert target.id != foreign.id
+    assert target.config_entries == {registry_config_entry.entry_id}
+    preserved = registry.async_get_device_by_identifier((DOMAIN, "cust-a:usage"), other.entry_id)
+    assert preserved is not None
+    assert preserved.id == foreign.id
+    assert (
+        sensor._async_group_device(
+            registry, registry_config_entry.entry_id, item, sensor.KepcoDeviceGroup.USAGE
+        ).id
+        == target.id
+    )
 
 
 @pytest.mark.asyncio
