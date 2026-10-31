@@ -32,6 +32,10 @@ class KepcoOnConnectionError(KepcoOnError):
 class KepcoOnRateLimitError(KepcoOnConnectionError):
     """KEPCO ON rate-limited the request."""
 
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
 
 class KepcoOnProtocolError(KepcoOnError):
     """KEPCO ON returned an unexpected protocol shape."""

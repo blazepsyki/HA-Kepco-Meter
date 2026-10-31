@@ -492,10 +492,11 @@ async def test_transport_honors_integer_retry_after_then_raises_rate_limit() -> 
     )
     server._responses[0][1].headers["Retry-After"] = "7"
 
-    with pytest.raises(KepcoOnRateLimitError):
+    with pytest.raises(KepcoOnRateLimitError) as raised:
         await with_transport(lambda transport: transport.request_json("/sessionCheck", {}), server)
 
     assert SLEEP_CALLS == [7.0]
+    assert raised.value.retry_after == 7.0
 
 
 @pytest.mark.asyncio
@@ -505,10 +506,11 @@ async def test_transport_caps_large_integer_retry_after_then_raises_rate_limit()
     response.headers["Retry-After"] = "999999"
     server.add(HOST, "/sessionCheck", "post", response=response)
 
-    with pytest.raises(KepcoOnRateLimitError):
+    with pytest.raises(KepcoOnRateLimitError) as raised:
         await with_transport(lambda transport: transport.request_json("/sessionCheck", {}), server)
 
     assert SLEEP_CALLS == [kepco_api.MAX_RETRY_AFTER_SECONDS]
+    assert raised.value.retry_after == kepco_api.MAX_RATE_LIMIT_SECONDS
 
 
 @pytest.mark.asyncio
@@ -540,13 +542,14 @@ async def test_transport_caps_far_future_http_date_retry_after_then_raises_rate_
     )
     server.add(HOST, "/sessionCheck", "post", response=response)
 
-    with pytest.raises(KepcoOnRateLimitError):
+    with pytest.raises(KepcoOnRateLimitError) as raised:
         await with_transport(
             lambda transport: transport.request_json("/sessionCheck", {}, clock=lambda: now),
             server,
         )
 
     assert SLEEP_CALLS == [kepco_api.MAX_RETRY_AFTER_SECONDS]
+    assert raised.value.retry_after == 3600.0
 
 
 @pytest.mark.asyncio

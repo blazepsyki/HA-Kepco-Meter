@@ -58,6 +58,7 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 USER_AGENT = f"HomeAssistant-KEPCO-ON/{VERSION}"
 TRANSIENT_STATUSES = frozenset({500, 502, 503})
 MAX_RETRY_AFTER_SECONDS = 30.0
+MAX_RATE_LIMIT_SECONDS = 24 * 60 * 60.0
 ALLOWED_PATHS = frozenset(
     {
         ENDPOINT_MAIN_CHART,
@@ -139,7 +140,7 @@ def _parse_retry_after(value: str | None, clock: ClockCallback) -> float:
         return 0.0
     stripped = value.strip()
     if stripped.isdigit():
-        return min(float(int(stripped)), MAX_RETRY_AFTER_SECONDS)
+        return min(float(stripped), MAX_RATE_LIMIT_SECONDS)
     try:
         parsed = parsedate_to_datetime(stripped)
     except TypeError, ValueError:
@@ -147,7 +148,7 @@ def _parse_retry_after(value: str | None, clock: ClockCallback) -> float:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         parsed = parsed.replace(tzinfo=UTC)
     seconds = max(0.0, (parsed.astimezone(UTC) - clock().astimezone(UTC)).total_seconds())
-    return min(seconds, MAX_RETRY_AFTER_SECONDS)
+    return min(seconds, MAX_RATE_LIMIT_SECONDS)
 
 
 async def _default_sleep(seconds: float) -> None:
@@ -257,8 +258,9 @@ class KepcoOnTransport:
             response.release()
             raise _TemporaryHttpError(response.status)
         if response.status == 429:
-            await self._sleep(_parse_retry_after(response.headers.get("Retry-After"), clock))
-            raise KepcoOnRateLimitError("KEPCO ON rate limit was reached")
+            retry_after = _parse_retry_after(response.headers.get("Retry-After"), clock)
+            await self._sleep(min(retry_after, MAX_RETRY_AFTER_SECONDS))
+            raise KepcoOnRateLimitError("KEPCO ON rate limit was reached", retry_after=retry_after)
         if response.status in (401, 403):
             raise KepcoOnSessionExpired("KEPCO ON session expired")
         if response.status == 204:

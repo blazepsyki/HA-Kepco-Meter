@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import Any, ClassVar, cast
 from unittest.mock import Mock
 
@@ -43,8 +44,9 @@ from custom_components.kepco_on.models import (
     serialize_customer,
 )
 from custom_components.kepco_on.session_store import session_to_payload
-from homeassistant.config_entries import ConfigEntryState, OptionsFlowManager
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState, OptionsFlowManager
 from homeassistant.const import CONF_PASSWORD
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -1306,3 +1308,137 @@ async def test_coordinator_connection_and_rate_limit_raise_update_failed() -> No
 
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
+
+
+@pytest.mark.parametrize("failure_position", [0, 1])
+@pytest.mark.parametrize("rate_limited", [False, True])
+async def test_transient_customer_failure_keeps_new_successes_and_recovers(
+    failure_position: int, rate_limited: bool
+) -> None:
+    from custom_components.kepco_on.coordinator import KepcoOnDataUpdateCoordinator
+
+    client = FakeClient(cast("Any", object()))
+    customers = (customer("key-1"), customer("key-2"), customer("key-3"))
+    failure = (
+        KepcoOnRateLimitError(TOKEN_SECRET, retry_after=3600)
+        if rate_limited
+        else KepcoOnConnectionError(TOKEN_SECRET)
+    )
+    results: list[KepcoBill | Exception] = [bill("202608", 111)] * failure_position + [failure]
+    if not rate_limited:
+        results.extend([bill("202608", 222)] * (2 - failure_position))
+    FakeClient.bill_results = results
+    coordinator = KepcoOnDataUpdateCoordinator(
+        cast("Any", Mock()), cast("Any", make_entry()), cast("Any", client), customers
+    )
+    if rate_limited and failure_position == 0:
+        with pytest.raises(UpdateFailed) as raised:
+            await coordinator._async_update_data()
+        assert raised.value.retry_after == 3600
+        assert TOKEN_SECRET not in str(raised.value)
+    else:
+        data = await coordinator._async_update_data()
+        assert len(data.bills_by_customer_key) == (failure_position if rate_limited else 2)
+        assert set(data.bills_by_customer_key).isdisjoint(data.errors_by_customer_key)
+        assert set(data.errors_by_customer_key.values()) == {
+            "rate_limited" if rate_limited else "connection_error"
+        }
+        assert TOKEN_SECRET not in repr(data)
+    assert len(client.bill_calls) == (failure_position + 1 if rate_limited else 3)
+    assert coordinator.update_interval == timedelta(seconds=3600 if rate_limited else 60)
+    FakeClient.bill_results = [bill("202609", 333)] * 3
+    recovered = await coordinator._async_update_data()
+    assert not recovered.errors_by_customer_key
+    assert len(recovered.bills_by_customer_key) == 3
+    assert coordinator.update_interval == timedelta(hours=DEFAULT_POLLING_INTERVAL_HOURS)
+
+
+@pytest.mark.parametrize("rate_limited", [False, True])
+async def test_temporary_failure_backoff_is_bounded_and_resets_after_recovery(
+    rate_limited: bool,
+) -> None:
+    from custom_components.kepco_on.coordinator import KepcoOnDataUpdateCoordinator
+
+    failure = KepcoOnRateLimitError("slow") if rate_limited else KepcoOnConnectionError("down")
+    coordinator = KepcoOnDataUpdateCoordinator(
+        cast("Any", Mock()),
+        cast("Any", make_entry(options={OPT_POLLING_INTERVAL_HOURS: 12})),
+        cast("Any", FakeClient(cast("Any", object()))),
+        (customer("key-1"),),
+    )
+    delays = []
+    for _ in range(9):
+        FakeClient.bill_results = [failure]
+        with pytest.raises(UpdateFailed) as raised:
+            await coordinator._async_update_data()
+        delays.append(raised.value.retry_after)
+    assert delays == (
+        [1200, 2400] + [3600] * 7 if rate_limited else [60, 120, 240, 480] + [900] * 5
+    )
+    FakeClient.bill_results = [bill("202608")]
+    await coordinator._async_update_data()
+    assert coordinator.update_interval == timedelta(hours=12)
+    FakeClient.bill_results = [failure]
+    with pytest.raises(UpdateFailed) as raised:
+        await coordinator._async_update_data()
+    assert raised.value.retry_after == (1200 if rate_limited else 60)
+
+
+async def test_real_coordinator_timer_recovers_without_manual_refresh(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from custom_components.kepco_on.coordinator import KepcoOnDataUpdateCoordinator
+
+    config_entry: ConfigEntry = ConfigEntry(
+        domain="kepco_on",
+        entry_id="retry-entry",
+        data={},
+        options={},
+        version=3,
+        minor_version=1,
+        title="Test",
+        source="user",
+        unique_id="test",
+        discovery_keys=MappingProxyType({}),
+        subentries_data=None,
+    )
+    hass.config_entries._entries[config_entry.entry_id] = config_entry
+    client = FakeClient(cast("Any", object()))
+    coordinator = KepcoOnDataUpdateCoordinator(
+        hass, config_entry, cast("Any", client), (customer("key-1"),)
+    )
+    original_call_at = hass.loop.call_at
+    scheduled_delays: list[float] = []
+    recovered = asyncio.Event()
+
+    def call_at(when: float, callback: Any, *args: Any, context: Any = None) -> asyncio.TimerHandle:
+        if getattr(callback, "__self__", None) is coordinator:
+            scheduled_delays.append(when - hass.loop.time())
+            if 58 < scheduled_delays[-1] < 62:
+                # Trigger the real retry callback now instead of waiting a minute.
+                when = hass.loop.time()
+        return original_call_at(when, callback, *args, context=context)
+
+    def listener() -> None:
+        if coordinator.last_update_success and hasattr(coordinator, "data"):
+            recovered.set()
+
+    monkeypatch.setattr(hass.loop, "call_at", call_at)
+    remove_listener = coordinator.async_add_listener(listener)
+    FakeClient.bill_results = [KepcoOnConnectionError("down"), bill("202608")]
+    try:
+        await coordinator.async_refresh()
+        assert not bool(coordinator.last_update_success)
+        async with asyncio.timeout(2):
+            await recovered.wait()
+        assert len(client.bill_calls) == 2
+        assert coordinator.last_update_success
+        assert coordinator.data.bills_by_customer_key["key-1"].bill_month == "202608"
+        assert 58 < scheduled_delays[-2] < 62
+        assert 6 * 3600 - 2 < scheduled_delays[-1] < 6 * 3600 + 2
+        assert coordinator._unsub_refresh is not None
+        await coordinator.async_shutdown()
+        assert coordinator._unsub_refresh is None
+    finally:
+        remove_listener()
+        await coordinator.async_shutdown()
