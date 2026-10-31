@@ -21,7 +21,6 @@ from homeassistant.const import CONF_PASSWORD
 from .test_auth import HOST, html_response, json_response
 from .test_config_flow import attach_fake_hass
 
-pytestmark = pytest.mark.usefixtures("socket_enabled")
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
