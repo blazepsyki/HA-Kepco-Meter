@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import pytest
 from custom_components.kepco_on.const import (
+    APARTMENT_NEIGHBOR_SENSOR_KEYS,
     DEFAULT_CO2_FACTOR_KG_PER_KWH,
     DOMAIN,
     OPT_CO2_FACTOR_KG_PER_KWH,
@@ -26,6 +27,7 @@ from custom_components.kepco_on.models import (
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfEnergy
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -257,6 +259,8 @@ def entity_entry(
         platform=platform,
         config_entry_id=config_entry_id,
         disabled_by=disabled_by,
+        device_id=None,
+        area_id=None,
     )
 
 
@@ -280,7 +284,7 @@ def by_key(entities: list[Any]) -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_sensors_have_exact_five_device_groups_counts_values_and_privacy() -> None:
+async def test_sensors_have_exact_six_device_groups_counts_values_and_privacy() -> None:
     from custom_components.kepco_on.sensor import KepcoDeviceGroup
 
     entities = await setup_entities()
@@ -293,7 +297,8 @@ async def test_sensors_have_exact_five_device_groups_counts_values_and_privacy()
         for group in KepcoDeviceGroup
     } == {
         KepcoDeviceGroup.MONTHLY_USAGE: 6,
-        KepcoDeviceGroup.METER_USAGE: 12,
+        KepcoDeviceGroup.METER_USAGE: 5,
+        KepcoDeviceGroup.USAGE: 7,
         KepcoDeviceGroup.ELECTRICITY_CHARGE: 10,
         KepcoDeviceGroup.NEIGHBOR_COMPARISON: 3,
         KepcoDeviceGroup.GREENHOUSE_GAS: 3,
@@ -312,7 +317,14 @@ async def test_sensors_have_exact_five_device_groups_counts_values_and_privacy()
         },
         KepcoDeviceGroup.METER_USAGE: {
             "identifiers": {(DOMAIN, "cust-a")},
-            "name": "검침/전기사용량",
+            "name": "검침 정보",
+            "manufacturer": "한국전력공사(KEPCO)",
+            "model": "한전ON",
+            "configuration_url": PAGE_URL,
+        },
+        KepcoDeviceGroup.USAGE: {
+            "identifiers": {(DOMAIN, "cust-a:usage")},
+            "name": "전기사용량·예측",
             "manufacturer": "한국전력공사(KEPCO)",
             "model": "한전ON",
             "configuration_url": PAGE_URL,
@@ -643,10 +655,10 @@ async def test_multiple_customer_device_names_are_distinct_and_privacy_safe() ->
     meter_devices = [
         entity.device_info
         for entity in entities
-        if entity.entity_description.key == "monthly_usage"
+        if entity.entity_description.key == "meter_reading"
     ]
 
-    assert {device["name"] for device in meter_devices} == {"검침/전기사용량"}
+    assert {device["name"] for device in meter_devices} == {"검침 정보"}
     assert {next(iter(device["identifiers"])) for device in meter_devices} == {
         (DOMAIN, "cust-a"),
         (DOMAIN, "cust-b"),
@@ -909,3 +921,173 @@ async def test_history_sensors_expose_billed_amount_only_when_history_carries_it
         "usage_period_start": date(2026, 7, 1),
         "usage_period_end": date(2026, 7, 31),
     }
+
+
+@pytest.mark.parametrize("existing_target", [False, True])
+async def test_usage_device_split_moves_sensors_and_preserves_settings(
+    hass: HomeAssistant, existing_target: bool
+) -> None:
+    from custom_components.kepco_on import sensor
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    registry_entry = MockConfigEntry(domain=DOMAIN, entry_id="entry-1")
+    registry_entry.add_to_hass(hass)
+    areas = ar.async_get(hass)
+    meter_area = areas.async_get_or_create("Meter area").id
+    custom_area = areas.async_get_or_create("Custom area").id
+    devices = dr.async_get(hass)
+    registry = er.async_get(hass)
+    item = customer("cust-a")
+    groups = sensor.KepcoDeviceGroup
+    legacy_devices: dict[sensor.KepcoDeviceGroup, str] = {}
+    for group in groups:
+        if group is groups.USAGE:
+            continue
+        device = devices.async_get_or_create(
+            config_entry_id="entry-1", **sensor._device_info(item, group)
+        )
+        devices.async_update_device(
+            device.id, name_by_user=f"Custom {group.value}", area_id=meter_area
+        )
+        legacy_devices[group] = device.id
+    if existing_target:
+        device = devices.async_get_or_create(
+            config_entry_id="entry-1", **sensor._device_info(item, groups.USAGE)
+        )
+        devices.async_update_device(device.id, area_id=custom_area, name_by_user="Custom usage")
+
+    originals = {}
+    for description in sensor.SENSOR_DESCRIPTIONS:
+        group = sensor._DEVICE_GROUP_PARENTS.get(description.device_group, description.device_group)
+        disabled = (
+            None
+            if description.entity_registry_enabled_default
+            else RegistryEntryDisabler.INTEGRATION
+        )
+        if description.key in {"child_discount", "household_usage"}:
+            disabled = RegistryEntryDisabler.USER
+        registered = registry.async_get_or_create(
+            "sensor",
+            DOMAIN,
+            f"cust-a_{description.key}",
+            config_entry=registry_entry,
+            device_id=legacy_devices[group],
+            disabled_by=disabled,
+        )
+        if description.key == "monthly_usage":
+            registered = registry.async_update_entity(
+                registered.entity_id, name="Custom sensor", icon="mdi:home", area_id=custom_area
+            )
+        originals[description.key] = registered
+
+    coordinator = FakeCoordinator(
+        KepcoCoordinatorData(
+            customers=(item,),
+            bills_by_customer_key={item.stable_key: bill()},
+            errors_by_customer_key={},
+        )
+    )
+    config_entry = entry(coordinator=coordinator)
+    entities: list[Any] = []
+    for _ in range(2):
+        await sensor.async_setup_entry(
+            hass, cast("Any", config_entry), cast("Any", entities.extend)
+        )
+        assert len(dr.async_entries_for_config_entry(devices, "entry-1")) == 6
+        for description in sensor.SENSOR_DESCRIPTIONS:
+            before = originals[description.key]
+            after = registry.async_get(before.entity_id)
+            assert after is not None
+            target = devices.async_get_device_by_identifier(
+                (DOMAIN, sensor._device_identifier(item, description.device_group)), "entry-1"
+            )
+            assert target is not None
+            assert after.device_id == target.id
+            assert (after.id, after.unique_id, after.name, after.icon, after.disabled_by) == (
+                before.id,
+                before.unique_id,
+                before.name,
+                before.icon,
+                before.disabled_by,
+            )
+            assert (after.area_id or target.area_id) == (before.area_id or meter_area)
+        for group, device_id in legacy_devices.items():
+            preserved = devices.async_get(device_id)
+            assert preserved is not None
+            assert preserved.name_by_user == f"Custom {group.value}"
+        usage = devices.async_get_device_by_identifier((DOMAIN, "cust-a:usage"), "entry-1")
+        assert usage is not None
+        assert usage.area_id == (custom_area if existing_target else meter_area)
+        assert usage.name_by_user == ("Custom usage" if existing_target else None)
+
+
+@pytest.mark.parametrize("contract_method", ["주택용/3kW", "아파트(단일계약)", "아파트(종합계약)"])
+async def test_apartment_neighbor_sensors_are_disabled_for_house_contracts(
+    contract_method: str,
+) -> None:
+    item = replace(customer("contract-key"), contract_method=contract_method)
+    sensors = by_key(await setup_entities(customers=(item,)))
+    for key in APARTMENT_NEIGHBOR_SENSOR_KEYS:
+        entity = sensors[key]
+        assert entity.entity_registry_enabled_default is (not item.is_house)
+        if item.is_house:
+            assert entity.native_value is None
+            assert entity.extra_state_attributes == {"data_status": "unsupported_profile"}
+        else:
+            assert entity.native_value is not None
+    assert sensors["neighbor_usage_comparison"].native_value == 573
+
+
+async def test_house_neighbor_registry_migration_preserves_user_disabling(
+    hass: HomeAssistant,
+) -> None:
+    from custom_components.kepco_on import sensor
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    registry_entry = MockConfigEntry(domain=DOMAIN, entry_id="entry-1")
+    registry_entry.add_to_hass(hass)
+    house = replace(customer("house"), contract_method="주택용/3kW")
+    registry = er.async_get(hass)
+    config_entry = SimpleNamespace(entry_id="entry-1", options={})
+    for key in APARTMENT_NEIGHBOR_SENSOR_KEYS:
+        for disabler in (None, RegistryEntryDisabler.USER, RegistryEntryDisabler.INTEGRATION):
+            selected = replace(house, stable_key=f"house-{disabler}")
+            registered = registry.async_get_or_create(
+                "sensor",
+                DOMAIN,
+                f"{selected.stable_key}_{key}",
+                config_entry=registry_entry,
+                disabled_by=disabler,
+            )
+            expected = (
+                RegistryEntryDisabler.USER
+                if disabler == RegistryEntryDisabler.USER
+                else RegistryEntryDisabler.INTEGRATION
+            )
+            for _ in range(2):
+                await sensor._async_remove_stale_registry_entries(
+                    hass, cast("Any", config_entry), (selected,)
+                )
+                current = registry.async_get(registered.entity_id)
+                assert current is not None
+                assert current.disabled_by == expected
+                assert current.unique_id == registered.unique_id
+
+    # An apartment comparison disabled by the integration becomes valid again.
+    registered = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "changed-contract_building_average_usage",
+        config_entry=registry_entry,
+        disabled_by=RegistryEntryDisabler.INTEGRATION,
+    )
+    await sensor._async_remove_stale_registry_entries(
+        hass,
+        cast("Any", config_entry),
+        (replace(customer("changed-contract"), contract_method="아파트(단일계약)"),),
+    )
+    current = registry.async_get(registered.entity_id)
+    assert current is not None
+    assert current.disabled_by is None

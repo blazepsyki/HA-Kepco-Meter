@@ -60,8 +60,11 @@ OPT_HISTORY_MONTHS = "history_months"
 # session store still restricts them to KEPCO domains, valid paths and expiry.
 CANDIDATE_COOKIE_NAMES: frozenset[str] = frozenset({"JSESSIONID", "kepcoSSO"})
 PERSISTED_COOKIE_ALLOWLIST: frozenset[str] = CANDIDATE_COOKIE_NAMES
+# Apartment-only comparisons that residential direct contracts never report.
+APARTMENT_NEIGHBOR_SENSOR_KEYS = frozenset({"building_average_usage", "apartment_average_usage"})
 
 __all__ = [
+    "APARTMENT_NEIGHBOR_SENSOR_KEYS",
     "BASE_URL",
     "CANDIDATE_COOKIE_NAMES",
     "COMBINED_APARTMENT_PLANNER_CONTRACT",
