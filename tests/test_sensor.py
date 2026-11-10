@@ -714,19 +714,18 @@ async def test_group_device_lookup_is_scoped_to_its_own_config_entry(
         pytest.fail("Deprecated unscoped device lookup was called")
 
     monkeypatch.setattr(registry, "async_get_device", deprecated_lookup)
-    target = sensor._async_group_device(
-        registry, registry_config_entry.entry_id, item, sensor.KepcoDeviceGroup.USAGE
+    description = next(
+        item for item in sensor.SENSOR_DESCRIPTIONS if item.key == "current_period_usage"
     )
+    entity = sensor.KepcoOnSensor(cast("Any", object()), item, description, {})
+    target = sensor._async_group_device(registry, registry_config_entry.entry_id, entity)
     assert target.id != foreign.id
     assert target.config_entries == {registry_config_entry.entry_id}
     preserved = registry.async_get_device_by_identifier((DOMAIN, "cust-a:usage"), other.entry_id)
     assert preserved is not None
     assert preserved.id == foreign.id
     assert (
-        sensor._async_group_device(
-            registry, registry_config_entry.entry_id, item, sensor.KepcoDeviceGroup.USAGE
-        ).id
-        == target.id
+        sensor._async_group_device(registry, registry_config_entry.entry_id, entity).id == target.id
     )
 
 
@@ -1116,8 +1115,8 @@ async def test_multiple_customer_device_names_are_distinct_and_privacy_safe() ->
         f"검침 정보 ({sha256(b'cust-b').hexdigest()[:4]})",
     }
     assert {next(iter(device["identifiers"])) for device in meter_devices} == {
-        (DOMAIN, "cust-a:usage"),
-        (DOMAIN, "cust-b:usage"),
+        (DOMAIN, "cust-a"),
+        (DOMAIN, "cust-b"),
     }
     rendered = repr([entity.device_info for entity in entities])
     assert RAW_CUSTOMER_SECRET not in rendered

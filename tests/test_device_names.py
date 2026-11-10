@@ -13,7 +13,7 @@ GROUP_NAMES = {
     "monthly_usage": "월별 사용량",
     "meter_usage": "검침 정보",
     "usage": "전기사용량·예측",
-    "electricity_charge": "전기요금",
+    "electricity_charge": "확정 전기요금",
     "neighbor_comparison": "이웃 전기사용량 비교",
     "greenhouse_gas": "온실가스 배출량",
 }
