@@ -882,7 +882,7 @@ async def async_setup_entry(
 def _async_group_device(
     registry: dr.DeviceRegistry,
     entry_id: str,
-    entity: KepcoOnSensor,
+    entity: KepcoOnSensor | PowerPlannerSensor,
 ) -> DeviceEntry:
     """Create a group once and inherit settings from its original device."""
     customer = entity.customer
