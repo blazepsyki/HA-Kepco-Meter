@@ -343,26 +343,6 @@ async def test_neighbor_defaults_and_values_follow_contract(contract_method: str
             assert entity.native_value == 100
 
 
-@pytest.fixture
-def registry_config_entry(hass: HomeAssistant) -> ConfigEntry:
-    """Register a real entry without loading its network-backed integration."""
-    config_entry = ConfigEntry(
-        domain=DOMAIN,
-        entry_id="entry-1",
-        data={},
-        options={},
-        version=3,
-        minor_version=1,
-        title="Test",
-        source="user",
-        unique_id="test",
-        discovery_keys=MappingProxyType({}),
-        subentries_data=None,
-    )
-    hass.config_entries._entries[config_entry.entry_id] = config_entry
-    return config_entry
-
-
 async def test_neighbor_registry_migration_preserves_user_disabling(
     hass: HomeAssistant, registry_config_entry: ConfigEntry
 ) -> None:
@@ -486,7 +466,6 @@ async def test_device_split_migrates_disabled_sensors_and_preserves_settings(
     from homeassistant.helpers import area_registry as ar
     from homeassistant.helpers import device_registry as dr
 
-    await ar.async_load(hass, load_empty=True)
     areas = ar.async_get(hass)
     meter_area = areas.async_get_or_create("Meter area").id
     neighbor_area = areas.async_get_or_create("Neighbor area").id
@@ -1555,7 +1534,7 @@ async def test_usage_device_split_moves_sensors_and_preserves_settings(
     item = customer("cust-a")
     groups = sensor.KepcoDeviceGroup
     legacy_devices: dict[sensor.KepcoDeviceGroup, str] = {}
-    for group in groups:
+    for group in {description.device_group for description in sensor.SENSOR_DESCRIPTIONS}:
         if group is groups.USAGE:
             continue
         device = devices.async_get_or_create(
