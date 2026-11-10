@@ -67,5 +67,6 @@ cache_dir = ".local/mypy"
 [[tool.mypy.overrides]]
 module = [
   "aresponses.*",
+  "pytest_homeassistant_custom_component.*",
 ]
 ignore_missing_imports = true
