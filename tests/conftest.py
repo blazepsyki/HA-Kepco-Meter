@@ -9,7 +9,7 @@ from homeassistant import loader
 from homeassistant.config_entries import ConfigEntries
 from homeassistant.core import HomeAssistant
 from homeassistant.core_config import DATA_CUSTOMIZE
-from homeassistant.helpers import device_registry, entity_registry, frame
+from homeassistant.helpers import area_registry, device_registry, entity_registry, frame
 from homeassistant.helpers.entity_values import EntityValues
 
 
@@ -24,6 +24,7 @@ async def hass(tmp_path: Path) -> AsyncIterator[HomeAssistant]:
     device_registry.async_setup(instance)
     await device_registry.async_load(instance, load_empty=True)
     await entity_registry.async_load(instance, load_empty=True)
+    await area_registry.async_get(instance).async_load()
     try:
         yield instance
     finally:

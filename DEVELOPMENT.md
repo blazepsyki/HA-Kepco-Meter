@@ -132,4 +132,4 @@ GitHub `Tests`는 형식·lint·타입·Python coverage·Node 테스트·의존�
 
 개발 환경 브랜치는 원본 `main`의 v0.4.4를 기반으로 합니다. 주택 청구 상세, 고객별 일시 오류 재시도, 사용량 기기 분리는 원본에 병합된 코드를 사용합니다. 선택 청구 필드의 형식 오류를 `invalid_fields`로 격리하는 처리, 고객 해시를 이용한 기기 이름 구분, Home Assistant 2026.11의 기기 소유 항목 조회 호환 처리도 유지합니다.
 
-원본에서 추가된 기기 registry 테스트 일부는 `pytest-homeassistant-custom-component`의 `MockConfigEntry`를 사용합니다. 이 브랜치의 Windows 환경에는 해당 플러그인을 설치하지 않으므로 해당 항목을 포함한 전체 테스트는 Linux CI에서 확인합니다. mypy에는 원본과 같은 플러그인 모듈 예외를 유지합니다. 저장소의 `hass` fixture를 사용하는 나머지 테스트는 Windows에서도 실행할 수 있습니다.
+원본에서 추가된 기기 registry 테스트도 개인 브랜치에서 사용하던 실제 `ConfigEntry` fixture를 사용합니다. `hass` fixture는 기기·엔티티·영역 registry를 준비하므로 Windows와 Linux에서 같은 테스트를 실행합니다. 별도 HA pytest 플러그인을 설치하지 않으며, mypy의 플러그인 모듈 예외는 원본 설정과의 호환을 위해 유지합니다.

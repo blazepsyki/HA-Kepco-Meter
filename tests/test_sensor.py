@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from hashlib import sha256
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -26,6 +26,7 @@ from custom_components.kepco_on.models import (
     KepcoUsageHistoryPoint,
 )
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -35,6 +36,26 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW_CUSTOMER_SECRET = "RAW_CUST_1234567890"
 RAW_HOUSE_SECRET = "RAW_HOUSE_0987654321"
 RAW_NAME_SECRET = "홍길동"
+
+
+@pytest.fixture
+def registry_config_entry(hass: HomeAssistant) -> ConfigEntry:
+    """Register a real entry without loading its network-backed integration."""
+    config_entry = ConfigEntry(
+        domain=DOMAIN,
+        entry_id="entry-1",
+        data={},
+        options={},
+        version=3,
+        minor_version=1,
+        title="Test",
+        source="user",
+        unique_id="test",
+        discovery_keys=MappingProxyType({}),
+        subentries_data=None,
+    )
+    hass.config_entries._entries[config_entry.entry_id] = config_entry
+    return config_entry
 
 
 @dataclass(slots=True)
@@ -1046,15 +1067,13 @@ async def test_history_sensors_expose_billed_amount_only_when_history_carries_it
 
 @pytest.mark.parametrize("existing_target", [False, True])
 async def test_usage_device_split_moves_sensors_and_preserves_settings(
-    hass: HomeAssistant, existing_target: bool
+    hass: HomeAssistant, registry_config_entry: ConfigEntry, existing_target: bool
 ) -> None:
     from custom_components.kepco_on import sensor
     from homeassistant.helpers import area_registry as ar
     from homeassistant.helpers import device_registry as dr
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-    registry_entry = MockConfigEntry(domain=DOMAIN, entry_id="entry-1")
-    registry_entry.add_to_hass(hass)
+    registry_entry = registry_config_entry
     areas = ar.async_get(hass)
     meter_area = areas.async_get_or_create("Meter area").id
     custom_area = areas.async_get_or_create("Custom area").id
@@ -1144,13 +1163,13 @@ async def test_usage_device_split_moves_sensors_and_preserves_settings(
         assert usage.name_by_user == ("Custom usage" if existing_target else None)
 
 
-async def test_usage_device_split_keeps_multi_customer_name_suffix(hass: HomeAssistant) -> None:
+async def test_usage_device_split_keeps_multi_customer_name_suffix(
+    hass: HomeAssistant, registry_config_entry: ConfigEntry
+) -> None:
     from custom_components.kepco_on import sensor
     from homeassistant.helpers import device_registry as dr
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-    registry_entry = MockConfigEntry(domain=DOMAIN, entry_id="entry-1")
-    registry_entry.add_to_hass(hass)
+    registry_entry = registry_config_entry
     devices = dr.async_get(hass)
     registry = er.async_get(hass)
     items = (customer("cust-a"), customer("cust-b"))
@@ -1214,12 +1233,11 @@ async def test_apartment_neighbor_sensors_are_disabled_for_house_contracts(
 
 async def test_house_neighbor_registry_migration_preserves_user_disabling(
     hass: HomeAssistant,
+    registry_config_entry: ConfigEntry,
 ) -> None:
     from custom_components.kepco_on import sensor
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-    registry_entry = MockConfigEntry(domain=DOMAIN, entry_id="entry-1")
-    registry_entry.add_to_hass(hass)
+    registry_entry = registry_config_entry
     house = replace(customer("house"), contract_method="주택용/3kW")
     registry = er.async_get(hass)
     config_entry = SimpleNamespace(entry_id="entry-1", options={})
