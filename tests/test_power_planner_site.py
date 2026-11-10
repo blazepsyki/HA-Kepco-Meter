@@ -1077,7 +1077,13 @@ async def test_planner_platform_reuses_old_ids_and_does_not_replace_other_custom
         for description in sensor.SENSOR_DESCRIPTIONS
         if description.key == "current_period_usage"
     )
-    old = sensor.KepcoOnSensor(cast("Any", coordinator), customers[0], old_description, {})
+    old = sensor.KepcoOnSensor(
+        cast("Any", coordinator),
+        customers[0],
+        old_description,
+        {},
+        device_name_suffix=current.device_name_suffix,
+    )
     assert current.device_info == old.device_info
 
 
